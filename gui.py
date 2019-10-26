@@ -28,23 +28,42 @@ from pymatgen.io.ase import AseAtomsAdaptor
 from .canvas2svg import create_svg_content
 
 
-def get_default_settings():
+def get_default_settings(overrides=None):
     """Return the default setting for the GUI."""
     # values commented out are never actually utilised in the code
-    return {
+    dct = {
         # "gui_graphs_string": "i, e - E[-1]",  # default for the graph command
         "gui_foreground_color": "#000000",
         "gui_background_color": "#ffffff",
         # "covalent_radii": None,
-        # "radii_scale": 0.89,
+        "radii_scale": 0.89,
         "force_vector_scale": 1.0,
         "velocity_vector_scale": 1.0,
         "show_unit_cell": True,
         "show_axes": True,
         "show_bonds": False,
+        "show_millers": True,
         # "shift_cell": False,
         "swap_mouse": False,
     }
+    if overrides:
+        dct.update(overrides)
+    return dct
+
+
+def get_ghost_settings(overrides=None):
+    """Return the default setting for ghost atoms."""
+    dct = {
+        "display": True,
+        "cross": False,
+        "label": False,
+        "lighten": 0.0,
+        "opacity": 0.4,
+        "linewidth": 0,
+    }
+    if overrides:
+        dct.update(overrides)
+    return dct
 
 
 def get_cell_coordinates(cell, origin=(0.0, 0.0, 0.0), show_repeats=None):
@@ -198,13 +217,11 @@ class AtomGui(GUI):
     def __init__(
         self,
         images=None,
-        show_bonds=False,
-        show_unit_cell=True,
-        show_axes=True,
+        config_settings=None,
         rotations="",
         element_colors=None,
         label_sites=0,
-        display_ghosts=(0.5, False),
+        ghost_settings=None,
         miller_indices=(),
     ):
         """Initialise the GUI.
@@ -213,20 +230,20 @@ class AtomGui(GUI):
         ----------
         images : ase.gui.images.Images
             list of ase.Atoms, with some settings for visualisations (mainly radii)
-        show_bonds: bool
-        show_unit_cell: bool
-        show_axes: bool
+        config_settings: dict or None
+            configuration settings to overrid defaults (e.g. {"show_axes": False})
         rotations : str
             string format of unit cell rotations '50x,-10y,120z' (note: order matters)
         element_colors: list[tuple]
-            (r, g, b) colour for each atomic number (0.0 <= value <= 1.0), defaults to 'jmol' scheme
+            (r, g, b) colour for each atomic number (0.0 <= value <= 1.0),
+            defaults to 'jmol' scheme
         label_sites: int
             0=None, 1=index, 2=magmoms, 3=symbols, 4=charges (see ``View.update_labels``)
-        display_ghosts: tuple
-            how to display atoms labeled as ghosts: (lighten fraction, add cross)
-            these are determined if atoms.arrays["ghost"] is set
-        miller_inices: list[tuple]
-            list of (h, k, l, color, thickness) to project onto the unit cell,
+        ghost_settings: dict or None
+            How to display atoms labelled as ghosts (overrides for default settings).
+            Ghost atoms are determined if atoms.arrays["ghost"] is set
+        miller_indices: list[tuple]
+            list of (h, k, l, colour, thickness) to project onto the unit cell,
             e.g. [(1, 0, 0, "blue", 1), (2, 2, 2, "green", 3.5)].
 
         """
@@ -236,16 +253,13 @@ class AtomGui(GUI):
         self.images = images
         self.observers = []
 
-        self.config = get_default_settings()
-        self.config["show_bonds"] = show_bonds
-        self.config["show_unit_cell"] = show_unit_cell
-        self.config["show_millers"] = True
-        self.config["show_axes"] = show_axes
-        self.config["display_ghosts"] = display_ghosts
+        self.config = get_default_settings(config_settings)
+        self.ghost_settings = get_ghost_settings(ghost_settings)
+
         assert all(
             len(v) == 5 for v in miller_indices
         ), "miller indices must be (h, k, l, color, thickness)"
-        self._miller_inices = miller_indices
+        self._miller_indices = miller_indices
 
         menu = self.get_menu_data()
 
@@ -299,17 +313,13 @@ class AtomGui(GUI):
 
         super().release(event)
 
-    def display_ghosts(self):
-        """Return how to display ghost atoms."""
-        return self.config["display_ghosts"]
-
     def showing_millers(self):
         """Return whether to display planes."""
         return self.config["show_millers"]
 
     def get_millers(self):
         """Return list of miller indices to project onto the unit cell, e.g. [(h, k, l), ...]."""
-        return self._miller_inices[:]
+        return self._miller_indices[:]
 
     def set_atoms(self, atoms):
         """Set the atoms, unit cell(s) and bonds to draw.
@@ -416,6 +426,26 @@ class AtomGui(GUI):
             b[bonds[:, 2:].any(1)] *= 0.5
             self.B[ncell_lines:] = self.X_bonds + b
 
+    def circle(self, color, selected, *bbox, tags=()):
+        """Add a circle element.
+
+        Replacement to ``View.circle``, but with added tags option
+
+        """
+        if selected:
+            outline = "#004500"
+            width = 3
+        else:
+            outline = "black"
+            width = 1
+        self.window.canvas.create_oval(
+            *tuple(int(x) for x in bbox),
+            fill=color,
+            outline=outline,
+            width=width,
+            tags=tags,
+        )
+
     def draw(self, status=True):
         """Draw all required objects on the canvas.
 
@@ -481,7 +511,7 @@ class AtomGui(GUI):
             array[:] = np.dot(array, axes) + all_coordinates[:n_atoms]
 
         colors = self.get_colors()
-        circle = self.window.circle
+        circle = self.circle
         arc = self.window.arc
         line = self.window.line
         constrained = ~self.images.get_dynamic(self.atoms)
@@ -504,6 +534,13 @@ class AtomGui(GUI):
             if obj_indx < n_atoms:
                 diameter = atom_diameters[obj_indx]
                 if visible[obj_indx]:
+                    atom_color = lighten_hexcolor(
+                        colors[obj_indx],
+                        fraction=self.ghost_settings["lighten"]
+                        if ghost[obj_indx]
+                        else 0.0,
+                    )
+
                     if "occupancy" in self.atoms.info:
                         site_occ = self.atoms.info["occupancy"][tags[obj_indx]]
                         # first an empty circle if a site is not fully occupied
@@ -524,24 +561,21 @@ class AtomGui(GUI):
                         ):
                             if np.round(occ, decimals=4) == 1.0:
                                 circle(
-                                    lighten_hexcolor(
-                                        colors[obj_indx], self.display_ghosts()[0]
-                                    )
-                                    if ghost[obj_indx]
-                                    else colors[obj_indx],
+                                    atom_color,
                                     selected[obj_indx],
                                     atom_lbound[obj_indx, 0],
                                     atom_lbound[obj_indx, 1],
                                     atom_lbound[obj_indx, 0] + diameter,
                                     atom_lbound[obj_indx, 1] + diameter,
+                                    tags=("atom-circle", "atom-ghost")
+                                    if ghost[obj_indx]
+                                    else ("atom-circle",),
                                 )
                             else:
+                                # TODO alter for ghost
                                 extent = 360.0 * occ
                                 arc(
-                                    lighten_hexcolor(
-                                        self.colors[atomic_numbers[sym]],
-                                        self.display_ghosts()[0],
-                                    ),
+                                    self.colors[atomic_numbers[sym]],
                                     selected[obj_indx],
                                     start,
                                     extent,
@@ -569,27 +603,31 @@ class AtomGui(GUI):
                             )
 
                         circle(
-                            lighten_hexcolor(colors[obj_indx], self.display_ghosts()[0])
-                            if ghost[obj_indx]
-                            else colors[obj_indx],
+                            atom_color,
                             selected[obj_indx],
                             atom_lbound[obj_indx, 0],
                             atom_lbound[obj_indx, 1],
                             atom_lbound[obj_indx, 0] + diameter,
                             atom_lbound[obj_indx, 1] + diameter,
+                            tags=("atom-circle", "atom-ghost")
+                            if ghost[obj_indx]
+                            else ("atom-circle",),
                         )
 
                     # Draw labels on the atoms
                     if self.labels is not None:
-                        self.window.text(
-                            atom_lbound[obj_indx, 0] + diameter / 2,
-                            atom_lbound[obj_indx, 1] + diameter / 2,
-                            str(self.labels[obj_indx]),
-                        )
+                        if ghost[obj_indx] and not self.ghost_settings["label"]:
+                            pass
+                        else:
+                            self.window.text(
+                                atom_lbound[obj_indx, 0] + diameter / 2,
+                                atom_lbound[obj_indx, 1] + diameter / 2,
+                                str(self.labels[obj_indx]),
+                            )
 
                     # Draw cross on constrained or ghost atoms
                     if constrained[obj_indx] or (
-                        ghost[obj_indx] and self.display_ghosts()[1]
+                        ghost[obj_indx] and self.ghost_settings["cross"]
                     ):
                         rad1 = int(0.14644 * diameter)
                         rad2 = int(0.85355 * diameter)
@@ -635,6 +673,7 @@ class AtomGui(GUI):
                         ),
                         width=1,
                         dash=(6, 4),  # dash pattern = (line length, gap length, ..)
+                        tags=("cell-line",),
                     )
                 else:
                     # TODO would be nice if bonds had an outline
@@ -651,6 +690,7 @@ class AtomGui(GUI):
                         ),
                         width=bond_linewidth,
                         fill=self.bond_colors[line_indx - num_cell_lines][0],
+                        tags=("bond-line",),
                     )
                     self.window.canvas.create_line(
                         (
@@ -665,6 +705,7 @@ class AtomGui(GUI):
                         ),
                         width=bond_linewidth,
                         fill=self.bond_colors[line_indx - num_cell_lines][1],
+                        tags=("bond-line",),
                     )
             else:
                 miller_indx = obj_indx - n_atoms - num_cell_lines - num_bond_lines
@@ -677,6 +718,7 @@ class AtomGui(GUI):
                     ),
                     width=self.miller_thickness[miller_indx],
                     fill=self.miller_colors[miller_indx],
+                    tags=("miller-line",),
                 )
                 # The problem with drawing polygons is controlling z-order
                 # it would be good to have alpha value transparency,
@@ -713,15 +755,12 @@ def view_atoms(
     atoms,
     repeat=(1, 1, 1),
     center=False,
-    show_bonds=False,
-    show_unit_cell=True,
+    config_settings=None,
     show_unit_repeats=False,
-    show_axes=True,
     rotations="",
     like_vesta=True,
-    radii_scale=0.89,
     label_sites=0,
-    display_ghosts=(0.5, False),
+    ghost_settings=None,
     miller_indices=(),
     run=True,
     bring_to_top=True,
@@ -734,11 +773,10 @@ def view_atoms(
         repeat unit cell
     center: bool
         Center atoms in unit cell
-    show_bonds: bool
-    show_unit_cell: bool
+    config_settings: dict or None
+        overrid default GUI setting, e.g. {"show_axes": False}
     show_unit_repeats: bool
         if True, show each repeat unit cell
-    show_axes: bool
     rotations : str
         string format of unit cell rotations '50x,-10y,120z' (note: order matters)
     like_vesta: bool
@@ -757,6 +795,7 @@ def view_atoms(
         bring the canvas window to the top
 
     """
+    config_settings = get_default_settings(config_settings)
     assert label_sites in [0, 1, 2, 3, 4]
     if isinstance(atoms, Structure):
         structure = atoms
@@ -776,19 +815,17 @@ def view_atoms(
     images = AtomImages(
         [atoms],
         element_radii=[d[1] for d in VESTA_ELEMENT_INFO] if like_vesta else None,
-        radii_scale=radii_scale,
+        radii_scale=config_settings.get("radii_scale"),
     )
     gui = AtomGui(
         images,
-        show_bonds=show_bonds,
-        show_unit_cell=show_unit_cell,
-        show_axes=show_axes,
+        config_settings=config_settings,
         rotations=rotations,
         element_colors=[tuple(d[4:]) for d in VESTA_ELEMENT_INFO]
         if like_vesta
         else None,
         label_sites=label_sites,
-        display_ghosts=display_ghosts,
+        ghost_settings=ghost_settings,
         miller_indices=miller_indices,
     )
     if bring_to_top:
@@ -806,16 +843,13 @@ def view_atoms_snapshot(
     atoms,
     repeat=(1, 1, 1),
     center=False,
-    show_bonds=False,
-    show_unit_cell=True,
+    config_settings=None,
     show_unit_repeats=False,
-    show_axes=True,
     rotations="",
     like_vesta=True,
     label_sites=0,
-    display_ghosts=(0.5, False),
+    ghost_settings=None,
     miller_indices=(),
-    radii_scale=0.89,
     zoom=1,
     resize_canvas=None,
     out_format="pil",
@@ -830,21 +864,20 @@ def view_atoms_snapshot(
         repeat unit cell
     center: bool
         Center atoms in unit cell
-    show_bonds: bool
-    show_unit_cell: bool
+    config_settings: dict or None
+        overrid default GUI setting, e.g. {"show_axes": False}
     show_unit_repeats: bool
         if True, show each repeat unit cell
-    show_axes: bool
     rotations : str
         string format of unit cell rotations '50x,-10y,120z' (note: order matters)
     like_vesta: bool
         use same default atomic radii and colors as Vesta
     label_sites: int
         0=None, 1=index, 2=magmoms, 3=symbols, 4=charges (see ``View.update_labels``)
-    display_ghosts: tuple
-        how to display atoms labeled as ghosts: (lighten fraction, add cross)
+    ghost_settings: dict or None
+        how to display atoms labelled as ghosts: (overrides fro defaults)
         these are determined if atoms.arrays["ghost"] is set
-    miller_inices: list[tuple]
+    miller_indices: list[tuple]
         list of (h, k, l, color, thickness) to project onto the unit cell,
         e.g. [(1, 0, 0, "blue", 1), (2, 2, 2, "green", 3.5)].
     zoom: float
@@ -873,20 +906,18 @@ def view_atoms_snapshot(
         "svg_util",
         "eps_raw",
     ], f"{out_format} not a recognized out_format"
+    ghost_settings = get_ghost_settings(ghost_settings)
     gui = view_atoms(
         atoms,
         repeat=repeat,
         center=center,
-        show_bonds=show_bonds,
-        show_unit_cell=show_unit_cell,
+        config_settings=config_settings,
         show_unit_repeats=show_unit_repeats,
-        show_axes=show_axes,
         rotations=rotations,
         like_vesta=like_vesta,
         label_sites=label_sites,
-        display_ghosts=display_ghosts,
+        ghost_settings=ghost_settings,
         miller_indices=miller_indices,
-        radii_scale=radii_scale,
         run=False,
         bring_to_top=False,
     )
@@ -901,7 +932,20 @@ def view_atoms_snapshot(
 
     try:
         if out_format in ["svg_raw", "svg_ipy", "svg_util"]:
-            image = create_svg_content(canvas)
+            image = create_svg_content(
+                canvas,
+                tag_funcs={
+                    "bond-line": lambda itemtype, options, style: style.update(
+                        {"stroke-opacity": "0.8", "stroke-linecap": "round"}
+                    ),
+                    "atom-ghost": lambda itemtype, options, style: style.update(
+                        {
+                            "fill-opacity": str(ghost_settings["opacity"]),
+                            "stroke-width": f"{ghost_settings['linewidth']}px",
+                        }
+                    ),
+                },
+            )
             if out_format == "svg_ipy":
                 from IPython.display import SVG
 
@@ -938,10 +982,8 @@ def view_atoms_subprocess(
     atoms,
     repeat=(1, 1, 1),
     center=False,
-    show_bonds=False,
-    show_unit_cell=True,
+    config_settings=None,
     show_unit_repeats=False,
-    show_axes=True,
     rotations="",
     like_vesta=True,
     label_sites=0,
@@ -957,11 +999,10 @@ def view_atoms_subprocess(
         repeat unit cell
     center: bool
         Center atoms in unit cell
-    show_bonds: bool
-    show_unit_cell: bool
+    config_settings: dict or None
+        overrid default GUI setting, e.g. {"show_axes": False}
     show_unit_repeats: bool
         if True, show each repeat unit cell
-    show_axes: bool
     rotations : str
         string format of unit cell rotations '50x,-10y,120z' (note: order matters)
     like_vesta: bool
@@ -977,10 +1018,8 @@ def view_atoms_subprocess(
     data["view_kwargs"] = {
         "repeat": repeat,
         "center": center,
-        "show_bonds": show_bonds,
-        "show_unit_cell": show_unit_cell,
+        "config_settings": config_settings,
         "show_unit_repeats": show_unit_repeats,
-        "show_axes": show_axes,
         "rotations": rotations,
         "like_vesta": like_vesta,
         "label_sites": label_sites,

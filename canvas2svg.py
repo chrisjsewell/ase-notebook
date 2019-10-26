@@ -82,7 +82,7 @@ def set_segment_func(flag):
         )
 
 
-def convert_canvas(document, canvas, items=None):
+def convert_canvas(document, canvas, items=None, tag_funcs=None):
     """Convert 'items' stored in 'canvas' to SVG 'document'.
 
     If 'items' is None, then all items are convered.
@@ -95,6 +95,12 @@ def convert_canvas(document, canvas, items=None):
     canvas: Tkinter.Canvas
     items: list
         list of objects to convert; if None then all items are converted
+    tag_funcs: dict or None
+        mapping of element tag to a function, with the signature:
+        ``func(itemtype, options, style_dict) -> None``, that can alter
+        the populated style_dict (in-place) before it is set on the element.
+        This is useful, for example, for setting attributes on certain elements,
+        for options not available in tkinter (like ``fill-opacity``).
 
     Returns
     -------
@@ -330,6 +336,10 @@ def convert_canvas(document, canvas, items=None):
             elif actual["underline"]:
                 style["text-decoration"] = "underline"
 
+        for tag in options["tags"].split():
+            if tag_funcs and tag in tag_funcs:
+                tag_funcs[tag](itemtype, options, style)
+
         for attr, value in style.items():
             if value != "":  # create only nonempty attributes
                 element.setAttribute(attr, str(value))
@@ -350,17 +360,18 @@ def initialise_svg_document():
     return document
 
 
-def create_svg_content(canvas, items=None, margin=10):
+def create_svg_content(canvas, items=None, margin=10, tag_funcs=None):
     """Create content for SVG file, containing whole canvas or selected items.
 
-    Sets proper dimensions, and viewport; additional margin can be set.
+    Builds on convert_canvas, but also sets proper dimensions, and viewport.
+    Additional margin can also be set.
 
     (formerly ``saveall``)
 
     """
     doc = initialise_svg_document()
 
-    for element in convert_canvas(doc, canvas, items):
+    for element in convert_canvas(doc, canvas, items=items, tag_funcs=tag_funcs):
         doc.documentElement.appendChild(element)
 
     if items is None:
