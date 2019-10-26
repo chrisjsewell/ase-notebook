@@ -226,8 +226,8 @@ class AtomGui(GUI):
             how to display atoms labeled as ghosts: (lighten fraction, add cross)
             these are determined if atoms.arrays["ghost"] is set
         miller_inices: list[tuple]
-            list of miller indices (and color) to project onto the unit cell,
-            e.g. [(1, 0, 0, "blue"), (2, 2, 2, "green")].
+            list of (h, k, l, color, thickness) to project onto the unit cell,
+            e.g. [(1, 0, 0, "blue", 1), (2, 2, 2, "green", 3.5)].
 
         """
         if not isinstance(images, Images):
@@ -243,8 +243,8 @@ class AtomGui(GUI):
         self.config["show_axes"] = show_axes
         self.config["display_ghosts"] = display_ghosts
         assert all(
-            len(v) == 4 for v in miller_indices
-        ), "miller indices must be (h, k, l, color)"
+            len(v) == 5 for v in miller_indices
+        ), "miller indices must be (h, k, l, color, thickness)"
         self._miller_inices = miller_indices
 
         menu = self.get_menu_data()
@@ -340,17 +340,20 @@ class AtomGui(GUI):
             miller_starts = []
             miller_ends = []
             miller_colors = []
-            for (h, k, l, color) in self.get_millers():
+            miller_thickness = []
+            for (h, k, l, color, thickness) in self.get_millers():
                 miller_points = get_miller_coordinates(atoms.cell, (h, k, l)).tolist()
                 miller_starts.extend(miller_points)
                 miller_ends.extend(miller_points[1:] + [miller_points[0]])
                 miller_colors.extend([color for _ in miller_points])
+                miller_thickness.extend([thickness for _ in miller_points])
             miller_starts = np.array(miller_starts, dtype=float)
             miller_ends = np.array(miller_ends, dtype=float)
             self.miller_colors = miller_colors
+            self.miller_thickness = miller_thickness
         else:
             miller_starts = miller_ends = np.zeros((0, 3))
-            self.miller_colors = []
+            self.miller_colors = self.miller_thickness = []
 
         if self.showing_bonds():
             atomscopy = atoms.copy()
@@ -672,7 +675,7 @@ class AtomGui(GUI):
                         miller_ends[miller_indx, 0] + celldisp[0],
                         miller_ends[miller_indx, 1] + celldisp[1],
                     ),
-                    width=1,
+                    width=self.miller_thickness[miller_indx],
                     fill=self.miller_colors[miller_indx],
                 )
                 # The problem with drawing polygons is controlling z-order
@@ -746,8 +749,8 @@ def view_atoms(
         how to display atoms labeled as ghosts: (lighten fraction, add cross)
         these are determined if atoms.arrays["ghost"] is set
     miller_inices: list[tuple]
-        list of miller indices (and color) to project onto the unit cell,
-        e.g. [(1, 0, 0, "blue"), (2, 2, 2, "green")].
+        list of (h, k, l, color, thickness) to project onto the unit cell,
+        e.g. [(1, 0, 0, "blue", 1), (2, 2, 2, "green", 3.5)].
     run: bool
         If False return gui, without running
     bring_to_top: bool
@@ -771,7 +774,7 @@ def view_atoms(
             repeat if isinstance(show_unit_repeats, bool) else show_unit_repeats
         )
     images = AtomImages(
-        [atoms.repeat(repeat)],
+        [atoms],
         element_radii=[d[1] for d in VESTA_ELEMENT_INFO] if like_vesta else None,
         radii_scale=radii_scale,
     )
@@ -842,8 +845,8 @@ def view_atoms_snapshot(
         how to display atoms labeled as ghosts: (lighten fraction, add cross)
         these are determined if atoms.arrays["ghost"] is set
     miller_inices: list[tuple]
-        list of miller indices (and color) to project onto the unit cell,
-        e.g. [(1, 0, 0, "blue"), (2, 2, 2, "green")].
+        list of (h, k, l, color, thickness) to project onto the unit cell,
+        e.g. [(1, 0, 0, "blue", 1), (2, 2, 2, "green", 3.5)].
     zoom: float
         fraction to rescale the image by
     resize_canvas: tuple or None
