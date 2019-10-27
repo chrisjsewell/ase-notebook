@@ -103,7 +103,10 @@ def test_snapshot_pil(get_test_structure):
     from PIL.EpsImagePlugin import EpsImageFile
 
     structure = get_test_structure("pyrite")
-    image = gui.view_atoms_snapshot(structure, miller_indices=[(1, 1, 0, "blue", 1)])
+    image = gui.view_atoms_snapshot(
+        structure,
+        miller_planes=[(1, 1, 0, "blue", 1, False), (1, 1, 1, "green", 1, True)],
+    )
     assert isinstance(image, EpsImageFile), image
 
 
@@ -117,6 +120,8 @@ def test_snapshot_ipy(get_test_structure):
 
     structure = get_test_structure("pyrite")
     image = gui.view_atoms_snapshot(
-        structure, miller_indices=[(1, 1, 0, "blue", 1)], out_format="svg_ipy"
+        structure,
+        miller_planes=[(1, 1, 0, "blue", 1, False), (1, 1, 1, "green", 1, True)],
+        out_format="svg_ipy",
     )
     assert isinstance(image, SVG), image
