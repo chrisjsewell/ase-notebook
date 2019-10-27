@@ -135,6 +135,8 @@ def get_cell_coordinates(cell, origin=(0.0, 0.0, 0.0), show_repeats=None):
 
     lines = np.array(lines, dtype=float)
 
+    # TODO add option to segment lines (to 'improve' the z-order of lines)
+
     return lines[:, 0], lines[:, 1]
 
 
@@ -334,7 +336,7 @@ class AtomGui(GUI):
         - compute miller index planes, by points that intercept with the unit cell
 
         """
-        natoms = len(atoms)
+        self.element_atoms = atoms.positions
 
         if self.showing_cell():
             cvec_starts, cvec_ends = get_cell_coordinates(
@@ -345,6 +347,8 @@ class AtomGui(GUI):
             # however, no where in the code is this ever set to True
         else:
             cvec_starts = cvec_ends = np.zeros((0, 3))
+
+        self.element_cell_lines = {"lines": np.stack((cvec_starts, cvec_ends), axis=1)}
 
         if self.showing_millers() and self.get_millers():
             miller_starts = []
@@ -359,72 +363,65 @@ class AtomGui(GUI):
                 miller_thickness.extend([thickness for _ in miller_points])
             miller_starts = np.array(miller_starts, dtype=float)
             miller_ends = np.array(miller_ends, dtype=float)
-            self.miller_colors = miller_colors
-            self.miller_thickness = miller_thickness
         else:
             miller_starts = miller_ends = np.zeros((0, 3))
-            self.miller_colors = self.miller_thickness = []
+            miller_colors = miller_thickness = []
+
+        self.element_miller_lines = {
+            "lines": np.stack((miller_starts, miller_ends), axis=1),
+            "colors": miller_colors,
+            "thickness": miller_thickness,
+        }
 
         if self.showing_bonds():
             atomscopy = atoms.copy()
             atomscopy.cell *= self.images.repeat[:, np.newaxis]
             bonds = get_bonds(atomscopy, self.get_covalent_radii(atoms))
             anums = atoms.get_atomic_numbers()
-            self.bond_colors = [
+            bond_colors = [
                 (self.colors[anums[bond[0]]], self.colors[anums[bond[1]]])
                 for bond in bonds
             ]
         else:
             bonds = np.empty((0, 5), int)
+            bond_colors = []
 
-        # X is all atomic coordinates, and starting points of vectors
-        # like bonds and cell segments.
-        # The reason to have them all in one big list is that we like to
-        # eventually rotate/sort it by Z-order when rendering.
-
-        # Also B are the end points of line segments.
-
-        self.X = np.empty(
-            (natoms + len(cvec_starts) + len(bonds) + len(miller_starts), 3)
-        )
-        self.X_pos = self.X[:natoms]
-        self.X_pos[:] = atoms.positions
-        self.X_cell = self.X[natoms : natoms + len(cvec_starts)]
-        self.X_bonds = self.X[
-            natoms + len(cvec_starts) : natoms + len(cvec_starts) + len(bonds)
-        ]
-        self.X_miller = self.X[
-            natoms
-            + len(cvec_starts)
-            + len(bonds) : natoms
-            + len(cvec_starts)
-            + len(bonds)
-            + len(miller_starts)
-        ]
-
-        cell = atoms.cell
-        ncell_lines = len(cvec_starts)
-        nbonds = len(bonds)
-
-        self.X_cell[:] = cvec_starts
-        self.X_miller[:] = miller_starts
-        self.B = np.empty((ncell_lines + nbonds, 3))
-        self.B[:ncell_lines] = cvec_ends
-        self.miller_ends = miller_ends
-
-        if nbonds > 0:
+        if len(bonds) > 0:
             positions = atoms.positions
-            af = self.images.repeat[:, np.newaxis] * cell
+            af = self.images.repeat[:, np.newaxis] * atoms.cell
             a = positions[bonds[:, 0]]
             b = positions[bonds[:, 1]] + np.dot(bonds[:, 2:], af) - a
             d = (b ** 2).sum(1) ** 0.5
             r = 0.65 * self.get_covalent_radii()
             x0 = (r[bonds[:, 0]] / d).reshape((-1, 1))
             x1 = (r[bonds[:, 1]] / d).reshape((-1, 1))
-            self.X_bonds[:] = a + b * x0
+            bond_starts = a + b * x0
             b *= 1.0 - x0 - x1
             b[bonds[:, 2:].any(1)] *= 0.5
-            self.B[ncell_lines:] = self.X_bonds + b
+            bond_ends = bond_starts + b
+        else:
+            bond_starts = bond_ends = np.empty((0, 3))
+
+        self.element_bond_lines = {
+            "lines": np.stack((bond_starts, bond_ends), axis=1),
+            "colors": bond_colors,
+        }
+
+        # record all positions (atoms first) with legacy array name,
+        # for use by View.focus to compute window scale
+        self.X = np.concatenate(
+            (
+                atoms.positions[:],
+                cvec_starts,
+                cvec_ends,
+                miller_starts,
+                miller_ends,
+                bond_starts,
+                bond_ends,
+            )
+        )
+        # record positions as self.X_pos, used by View.move
+        self.X_pos = atoms.positions[:]
 
     def circle(self, color, selected, *bbox, tags=()):
         """Add a circle element.
@@ -458,44 +455,84 @@ class AtomGui(GUI):
 
         """
         self.window.clear()
+
+        # compute orientation, position and scale of axes
         axes = self.scale * self.axes * (1, -1, 1)
         offset = np.dot(self.center, axes)
         offset[:2] -= 0.5 * self.window.size
-        all_coordinates = np.dot(self.X, axes) - offset
-        n_atoms = len(self.atoms)
-        num_cell_lines = len(self.X_cell)
-        num_bond_lines = len(self.X_bonds)
-        bond_linewidth = self.scale * 0.15
 
-        # extension for partial occupancies
-        tags = self.atoms.get_tags()
-
-        # The indices enumerate drawable objects in z order:
-        # TODO z-ordering for lines should take into account start and end?
-        self.zorder_indices = all_coordinates[:, 2].argsort()
-        atom_radii = self.get_covalent_radii() * self.scale
-        if self.window["toggle-show-bonds"]:
-            atom_radii *= 0.65
-        atom_coord = self.P = all_coordinates[:n_atoms, :2]
-        atom_lbound = (atom_coord - atom_radii[:, None]).round().astype(int)
-        line_starts = all_coordinates[n_atoms:, :2].round().astype(int)
-        line_ends = (np.dot(self.B, axes) - offset).round().astype(int)
-        miller_starts = (
-            all_coordinates[n_atoms + num_cell_lines + num_bond_lines :, :3]
+        # align elements to axes
+        position_atoms = np.dot(self.element_atoms, axes) - offset
+        pos_cell_lines = (
+            (
+                np.einsum("ijk, km -> ijm", self.element_cell_lines["lines"], axes)
+                - offset
+            )
             .round()
             .astype(int)
         )
-        miller_ends = (np.dot(self.miller_ends, axes) - offset).round().astype(int)
-        # use if making polygons
-        # miller_others = (
-        #     (np.einsum("ijk, km -> ijm", self.miller, axes) - offset)
-        #     .round()
-        #     .astype(int)
-        # )
+        pos_bond_lines = (
+            (
+                np.einsum("ijk, km -> ijm", self.element_bond_lines["lines"], axes)
+                - offset
+            )
+            .round()
+            .astype(int)
+        )
+        pos_miller_lines = (
+            (
+                np.einsum("ijk, km -> ijm", self.element_miller_lines["lines"], axes)
+                - offset
+            )
+            .round()
+            .astype(int)
+        )
+
+        # work out the order to add elements in (z-order)
+        # Note: for lines, we use the largest z of the start/end
+        zorder_indices = np.concatenate(
+            (
+                position_atoms,
+                pos_cell_lines.max(axis=1),
+                pos_bond_lines.max(axis=1),
+                pos_miller_lines.max(axis=1),
+            )
+        )[:, 2].argsort()
+
+        # record the length of each element, so we can map to the zorder_indices
+        num_atoms = len(position_atoms)
+        num_cell_lines = len(pos_cell_lines)
+        num_bond_lines = len(pos_bond_lines)
+
+        # compute values necessary for drawing atoms
+        atom_radii = self.get_covalent_radii() * self.scale
+        if self.window["toggle-show-bonds"]:
+            atom_radii *= 0.65
+        atom_coord = self.P = position_atoms[:, :2]
+        atom_lbound = (atom_coord - atom_radii[:, None]).round().astype(int)
         celldisp = (
             (np.dot(self.atoms.get_celldisp().reshape((3,)), axes)).round().astype(int)
         )
         atom_diameters = (2 * atom_radii).round().astype(int)
+
+        constrained = ~self.images.get_dynamic(self.atoms)
+        selected = self.images.selected
+        visible = self.images.visible
+
+        # set self.labels for atoms
+        self.update_labels()
+
+        # extension for partial occupancies
+        tags = self.atoms.get_tags()
+
+        # extension for ghost atoms
+        if "ghost" in self.atoms.arrays:
+            ghost = self.atoms.get_array("ghost")
+        else:
+            ghost = [False for _ in self.atoms]
+
+        # set linewidth for bonds
+        bond_linewidth = self.scale * 0.15
 
         vector_arrays = []
         if self.window["toggle-show-velocities"]:
@@ -508,30 +545,20 @@ class AtomGui(GUI):
             vector_arrays.append(f * self.force_vector_scale)
 
         for array in vector_arrays:
-            array[:] = np.dot(array, axes) + all_coordinates[:n_atoms]
+            array[:] = np.dot(array, axes) + position_atoms
 
+        # setup drawing functions
         colors = self.get_colors()
         circle = self.circle
         arc = self.window.arc
         line = self.window.line
-        constrained = ~self.images.get_dynamic(self.atoms)
-        if "ghost" in self.atoms.arrays:
-            ghost = self.atoms.get_array("ghost")
-        else:
-            ghost = [False for _ in self.atoms]
-
-        selected = self.images.selected
-        visible = self.images.visible
-
-        self.update_labels()
-
         if self.arrowkey_mode == self.ARROWKEY_MOVE:
             movecolor = GREEN
         elif self.arrowkey_mode == self.ARROWKEY_ROTATE:
             movecolor = PURPLE
 
-        for obj_indx in self.zorder_indices:
-            if obj_indx < n_atoms:
+        for obj_indx in zorder_indices:
+            if obj_indx < num_atoms:
                 diameter = atom_diameters[obj_indx]
                 if visible[obj_indx]:
                     atom_color = lighten_hexcolor(
@@ -653,71 +680,84 @@ class AtomGui(GUI):
                         assert not np.isnan(vector).any()
                         self.arrow(
                             (
-                                all_coordinates[obj_indx, 0],
-                                all_coordinates[obj_indx, 1],
+                                position_atoms[obj_indx, 0],
+                                position_atoms[obj_indx, 1],
                                 vector[obj_indx, 0],
                                 vector[obj_indx, 1],
                             ),
                             width=2,
                         )
-            elif obj_indx < n_atoms + num_cell_lines + num_bond_lines:
-                # Draw unit cell and/or bonds:
-                line_indx = obj_indx - n_atoms
-                if line_indx < num_cell_lines:
-                    self.window.canvas.create_line(
-                        (
-                            line_starts[line_indx, 0] + celldisp[0],
-                            line_starts[line_indx, 1] + celldisp[1],
-                            line_ends[line_indx, 0] + celldisp[0],
-                            line_ends[line_indx, 1] + celldisp[1],
-                        ),
-                        width=1,
-                        dash=(6, 4),  # dash pattern = (line length, gap length, ..)
-                        tags=("cell-line",),
-                    )
-                else:
-                    # TODO would be nice if bonds had an outline
-                    self.window.canvas.create_line(
-                        (
-                            line_starts[line_indx, 0],
-                            line_starts[line_indx, 1],
-                            line_starts[line_indx, 0]
-                            + 0.5
-                            * (line_ends[line_indx, 0] - line_starts[line_indx, 0]),
-                            line_starts[line_indx, 1]
-                            + 0.5
-                            * (line_ends[line_indx, 1] - line_starts[line_indx, 1]),
-                        ),
-                        width=bond_linewidth,
-                        fill=self.bond_colors[line_indx - num_cell_lines][0],
-                        tags=("bond-line",),
-                    )
-                    self.window.canvas.create_line(
-                        (
-                            line_starts[line_indx, 0]
-                            + 0.5
-                            * (line_ends[line_indx, 0] - line_starts[line_indx, 0]),
-                            line_starts[line_indx, 1]
-                            + 0.5
-                            * (line_ends[line_indx, 1] - line_starts[line_indx, 1]),
-                            line_ends[line_indx, 0],
-                            line_ends[line_indx, 1],
-                        ),
-                        width=bond_linewidth,
-                        fill=self.bond_colors[line_indx - num_cell_lines][1],
-                        tags=("bond-line",),
-                    )
-            else:
-                miller_indx = obj_indx - n_atoms - num_cell_lines - num_bond_lines
+            elif obj_indx < num_atoms + num_cell_lines:
+                # Draw unit cell lines
+                line_idx = obj_indx - num_atoms
                 self.window.canvas.create_line(
                     (
-                        miller_starts[miller_indx, 0] + celldisp[0],
-                        miller_starts[miller_indx, 1] + celldisp[1],
-                        miller_ends[miller_indx, 0] + celldisp[0],
-                        miller_ends[miller_indx, 1] + celldisp[1],
+                        pos_cell_lines[line_idx, 0, 0] + celldisp[0],
+                        pos_cell_lines[line_idx, 0, 1] + celldisp[1],
+                        pos_cell_lines[line_idx, 1, 0] + celldisp[0],
+                        pos_cell_lines[line_idx, 1, 1] + celldisp[1],
                     ),
-                    width=self.miller_thickness[miller_indx],
-                    fill=self.miller_colors[miller_indx],
+                    width=1,
+                    dash=(6, 4),  # dash pattern = (line length, gap length, ..)
+                    tags=("cell-line",),
+                )
+            elif obj_indx < num_atoms + num_cell_lines + num_bond_lines:
+                # Draw bond lines, splitting in half, and colouring each half by nearest atom
+                # TODO would be nice if bonds had an outline
+                line_idx = obj_indx - num_atoms - num_cell_lines
+                self.window.canvas.create_line(
+                    (
+                        pos_bond_lines[line_idx, 0, 0],
+                        pos_bond_lines[line_idx, 0, 1],
+                        pos_bond_lines[line_idx, 0, 0]
+                        + 0.5
+                        * (
+                            pos_bond_lines[line_idx, 1, 0]
+                            - pos_bond_lines[line_idx, 0, 0]
+                        ),
+                        pos_bond_lines[line_idx, 0, 1]
+                        + 0.5
+                        * (
+                            pos_bond_lines[line_idx, 1, 1]
+                            - pos_bond_lines[line_idx, 0, 1]
+                        ),
+                    ),
+                    width=bond_linewidth,
+                    fill=self.element_bond_lines["colors"][line_idx][0],
+                    tags=("bond-line",),
+                )
+                self.window.canvas.create_line(
+                    (
+                        pos_bond_lines[line_idx, 0, 0]
+                        + 0.5
+                        * (
+                            pos_bond_lines[line_idx, 1, 0]
+                            - pos_bond_lines[line_idx, 0, 0]
+                        ),
+                        pos_bond_lines[line_idx, 0, 1]
+                        + 0.5
+                        * (
+                            pos_bond_lines[line_idx, 1, 1]
+                            - pos_bond_lines[line_idx, 0, 1]
+                        ),
+                        pos_bond_lines[line_idx, 1, 0],
+                        pos_bond_lines[line_idx, 1, 1],
+                    ),
+                    width=bond_linewidth,
+                    fill=self.element_bond_lines["colors"][line_idx][1],
+                    tags=("bond-line",),
+                )
+            else:
+                miller_indx = obj_indx - num_atoms - num_cell_lines - num_bond_lines
+                self.window.canvas.create_line(
+                    (
+                        pos_miller_lines[miller_indx, 0, 0] + celldisp[0],
+                        pos_miller_lines[miller_indx, 0, 1] + celldisp[1],
+                        pos_miller_lines[miller_indx, 1, 0] + celldisp[0],
+                        pos_miller_lines[miller_indx, 1, 1] + celldisp[1],
+                    ),
+                    width=self.element_miller_lines["thickness"][miller_indx],
+                    fill=self.element_miller_lines["colors"][miller_indx],
                     tags=("miller-line",),
                 )
                 # The problem with drawing polygons is controlling z-order
