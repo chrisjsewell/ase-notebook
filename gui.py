@@ -224,7 +224,7 @@ class AtomGui(GUI):
         element_colors=None,
         label_sites=0,
         ghost_settings=None,
-        miller_indices=(),
+        miller_planes=(),
     ):
         """Initialise the GUI.
 
@@ -244,9 +244,9 @@ class AtomGui(GUI):
         ghost_settings: dict or None
             How to display atoms labelled as ghosts (overrides for default settings).
             Ghost atoms are determined if atoms.arrays["ghost"] is set
-        miller_indices: list[tuple]
-            list of (h, k, l, colour, thickness) to project onto the unit cell,
-            e.g. [(1, 0, 0, "blue", 1), (2, 2, 2, "green", 3.5)].
+        miller_planes: list[tuple]
+            list of (h, k, l, colour, thickness, as_poly) to project onto the unit cell,
+            e.g. [(1, 0, 0, "blue", 1, True), (2, 2, 2, "green", 3.5, False)].
 
         """
         if not isinstance(images, Images):
@@ -259,9 +259,9 @@ class AtomGui(GUI):
         self.ghost_settings = get_ghost_settings(ghost_settings)
 
         assert all(
-            len(v) == 5 for v in miller_indices
-        ), "miller indices must be (h, k, l, color, thickness)"
-        self._miller_indices = miller_indices
+            len(v) == 6 for v in miller_planes
+        ), "miller planes must be (h, k, l, colour, thickness, plane)"
+        self._miller_planes = miller_planes
 
         menu = self.get_menu_data()
 
@@ -321,7 +321,7 @@ class AtomGui(GUI):
 
     def get_millers(self):
         """Return list of miller indices to project onto the unit cell, e.g. [(h, k, l), ...]."""
-        return self._miller_indices[:]
+        return self._miller_planes[:]
 
     def set_atoms(self, atoms):
         """Set the atoms, unit cell(s) and bonds to draw.
@@ -336,7 +336,7 @@ class AtomGui(GUI):
         - compute miller index planes, by points that intercept with the unit cell
 
         """
-        self.element_atoms = atoms.positions
+        self.el_atoms = atoms.positions
 
         if self.showing_cell():
             cvec_starts, cvec_ends = get_cell_coordinates(
@@ -348,30 +348,47 @@ class AtomGui(GUI):
         else:
             cvec_starts = cvec_ends = np.zeros((0, 3))
 
-        self.element_cell_lines = {"lines": np.stack((cvec_starts, cvec_ends), axis=1)}
+        self.el_cell_lines = {"lines": np.stack((cvec_starts, cvec_ends), axis=1)}
+
+        self.el_miller_lines = {"starts": [], "ends": [], "colors": [], "thickness": []}
+        self.el_miller_planes = {"planes": [], "colors": [], "thickness": []}
+        all_miller_points = []
 
         if self.showing_millers() and self.get_millers():
-            miller_starts = []
-            miller_ends = []
-            miller_colors = []
-            miller_thickness = []
-            for (h, k, l, color, thickness) in self.get_millers():
-                miller_points = get_miller_coordinates(atoms.cell, (h, k, l)).tolist()
-                miller_starts.extend(miller_points)
-                miller_ends.extend(miller_points[1:] + [miller_points[0]])
-                miller_colors.extend([color for _ in miller_points])
-                miller_thickness.extend([thickness for _ in miller_points])
-            miller_starts = np.array(miller_starts, dtype=float)
-            miller_ends = np.array(miller_ends, dtype=float)
-        else:
-            miller_starts = miller_ends = np.zeros((0, 3))
-            miller_colors = miller_thickness = []
 
-        self.element_miller_lines = {
-            "lines": np.stack((miller_starts, miller_ends), axis=1),
-            "colors": miller_colors,
-            "thickness": miller_thickness,
-        }
+            for (h, k, l, color, thickness, plane) in self.get_millers():
+                miller_points = get_miller_coordinates(atoms.cell, (h, k, l)).tolist()
+                all_miller_points.extend(miller_points)
+                if plane:
+                    self.el_miller_planes["planes"].append(
+                        miller_points
+                        if len(miller_points) == 4
+                        else miller_points + [[np.nan, np.nan, np.nan]]
+                    )
+                    self.el_miller_planes["colors"].append(color)
+                    self.el_miller_planes["thickness"].append(thickness)
+                else:
+                    self.el_miller_lines["starts"].extend(miller_points)
+                    self.el_miller_lines["ends"].extend(
+                        miller_points[1:] + [miller_points[0]]
+                    )
+                    self.el_miller_lines["colors"].extend(
+                        [color for _ in miller_points]
+                    )
+                    self.el_miller_lines["thickness"].extend(
+                        [thickness for _ in miller_points]
+                    )
+
+        self.el_miller_lines["lines"] = np.stack(
+            (
+                self.el_miller_lines.pop("starts") or np.zeros((0, 3)),
+                self.el_miller_lines.pop("ends") or np.zeros((0, 3)),
+            ),
+            axis=1,
+        )
+        self.el_miller_planes["planes"] = np.array(
+            self.el_miller_planes["planes"] or np.zeros((0, 4, 3)), dtype=float
+        )
 
         if self.showing_bonds():
             atomscopy = atoms.copy()
@@ -402,25 +419,23 @@ class AtomGui(GUI):
         else:
             bond_starts = bond_ends = np.empty((0, 3))
 
-        self.element_bond_lines = {
+        self.el_bond_lines = {
             "lines": np.stack((bond_starts, bond_ends), axis=1),
             "colors": bond_colors,
         }
 
-        # record all positions (atoms first) with legacy array name,
-        # for use by View.focus to compute window scale
+        # record all positions (atoms first) with legacy array name, for use by View.focus
         self.X = np.concatenate(
             (
                 atoms.positions[:],
                 cvec_starts,
                 cvec_ends,
-                miller_starts,
-                miller_ends,
+                all_miller_points,
                 bond_starts,
                 bond_ends,
             )
         )
-        # record positions as self.X_pos, used by View.move
+        # record positions with legacy array name, used by View.move
         self.X_pos = atoms.positions[:]
 
     def circle(self, color, selected, *bbox, tags=()):
@@ -553,40 +568,36 @@ class AtomGui(GUI):
         offset[:2] -= 0.5 * self.window.size
 
         # align elements to axes
-        position_atoms = np.dot(self.element_atoms, axes) - offset
+        position_atoms = np.dot(self.el_atoms, axes) - offset
         pos_cell_lines = (
-            (
-                np.einsum("ijk, km -> ijm", self.element_cell_lines["lines"], axes)
-                - offset
-            )
+            (np.einsum("ijk, km -> ijm", self.el_cell_lines["lines"], axes) - offset)
             .round()
             .astype(int)
         )
         pos_bond_lines = (
-            (
-                np.einsum("ijk, km -> ijm", self.element_bond_lines["lines"], axes)
-                - offset
-            )
+            (np.einsum("ijk, km -> ijm", self.el_bond_lines["lines"], axes) - offset)
             .round()
             .astype(int)
         )
         pos_miller_lines = (
-            (
-                np.einsum("ijk, km -> ijm", self.element_miller_lines["lines"], axes)
-                - offset
-            )
+            (np.einsum("ijk, km -> ijm", self.el_miller_lines["lines"], axes) - offset)
             .round()
             .astype(int)
+        )
+        pos_miller_planes = (
+            np.einsum("ijk, km -> ijm", self.el_miller_planes["planes"], axes) - offset
         )
 
         # work out the order to add elements in (z-order)
         # Note: for lines, we use the largest z of the start/end
-        zorder_indices = np.concatenate(
+        zorder_indices = self.indices = np.concatenate(
             (
                 position_atoms,
                 pos_cell_lines.max(axis=1),
                 pos_bond_lines.max(axis=1),
                 pos_miller_lines.max(axis=1),
+                # the final plane coordinate can be np.nan, if it is a triangle
+                np.nanmax(pos_miller_planes, axis=1),
             )
         )[:, 2].argsort()
 
@@ -594,6 +605,7 @@ class AtomGui(GUI):
         num_atoms = len(position_atoms)
         num_cell_lines = len(pos_cell_lines)
         num_bond_lines = len(pos_bond_lines)
+        num_miller_lines = len(pos_miller_lines)
 
         # compute values necessary for drawing atoms
         atom_radii = self.get_covalent_radii() * self.scale
@@ -735,7 +747,7 @@ class AtomGui(GUI):
                         ),
                     ),
                     width=bond_linewidth,
-                    fill=self.element_bond_lines["colors"][line_idx][0],
+                    fill=self.el_bond_lines["colors"][line_idx][0],
                     tags=("bond-line",),
                 )
                 self.window.canvas.create_line(
@@ -756,10 +768,13 @@ class AtomGui(GUI):
                         pos_bond_lines[line_idx, 1, 1],
                     ),
                     width=bond_linewidth,
-                    fill=self.element_bond_lines["colors"][line_idx][1],
+                    fill=self.el_bond_lines["colors"][line_idx][1],
                     tags=("bond-line",),
                 )
-            else:
+            elif (
+                obj_indx
+                < num_atoms + num_cell_lines + num_bond_lines + num_miller_lines
+            ):
                 miller_indx = obj_indx - num_atoms - num_cell_lines - num_bond_lines
                 self.window.canvas.create_line(
                     (
@@ -768,28 +783,34 @@ class AtomGui(GUI):
                         pos_miller_lines[miller_indx, 1, 0] + celldisp[0],
                         pos_miller_lines[miller_indx, 1, 1] + celldisp[1],
                     ),
-                    width=self.element_miller_lines["thickness"][miller_indx],
-                    fill=self.element_miller_lines["colors"][miller_indx],
+                    width=self.el_miller_lines["thickness"][miller_indx],
+                    fill=self.el_miller_lines["colors"][miller_indx],
                     tags=("miller-line",),
                 )
-                # The problem with drawing polygons is controlling z-order
-                # it would be good to have alpha value transparency,
-                # but this is not easily available in tkinter
-                # self.window.canvas.create_polygon(
-                #     (
-                #         miller_starts[poly_indx, 0],
-                #         miller_starts[poly_indx, 1],
-                #         miller_others[poly_indx, 0, 0],
-                #         miller_others[poly_indx, 0, 1],
-                #         miller_others[poly_indx, 1, 0],
-                #         miller_others[poly_indx, 1, 1],
-                #         miller_others[poly_indx, 2, 0],
-                #         miller_others[poly_indx, 2, 1],
-                #     ),
-                #     width=1,
-                #     outline="blue",
-                #     fill=""
-                # )
+            else:
+                miller_indx = (
+                    obj_indx
+                    - num_atoms
+                    - num_cell_lines
+                    - num_bond_lines
+                    - num_miller_lines
+                )
+                plane = pos_miller_planes[miller_indx]
+                if np.isnan(plane[3, 0]):
+                    # it is a triangle, and we can ignore the last point
+                    plane = plane[:3, :]
+                plane_pts = [
+                    pt[i] + celldisp[i]
+                    for pt in plane.round().astype(int)
+                    for i in [0, 1]
+                ]
+                self.window.canvas.create_polygon(
+                    plane_pts,
+                    width=self.el_miller_planes["thickness"][miller_indx],
+                    outline=self.el_miller_planes["colors"][miller_indx],
+                    fill=self.el_miller_planes["colors"][miller_indx],
+                    tags=("miller-plane",),
+                )
 
         if self.window["toggle-show-axes"]:
             self.draw_axes()
@@ -813,7 +834,7 @@ def view_atoms(
     like_vesta=True,
     label_sites=0,
     ghost_settings=None,
-    miller_indices=(),
+    miller_planes=(),
     run=True,
     bring_to_top=True,
 ):
@@ -838,9 +859,9 @@ def view_atoms(
     display_ghosts: tuple
         how to display atoms labeled as ghosts: (lighten fraction, add cross)
         these are determined if atoms.arrays["ghost"] is set
-    miller_inices: list[tuple]
-        list of (h, k, l, color, thickness) to project onto the unit cell,
-        e.g. [(1, 0, 0, "blue", 1), (2, 2, 2, "green", 3.5)].
+    miller_planes: list[tuple]
+        list of (h, k, l, colour, thickness, as_poly) to project onto the unit cell,
+        e.g. [(1, 0, 0, "blue", 1, True), (2, 2, 2, "green", 3.5, False)].
     run: bool
         If False return gui, without running
     bring_to_top: bool
@@ -878,7 +899,7 @@ def view_atoms(
         else None,
         label_sites=label_sites,
         ghost_settings=ghost_settings,
-        miller_indices=miller_indices,
+        miller_planes=miller_planes,
     )
     if bring_to_top:
         tk_window = gui.window.win  # type: Toplevel
@@ -901,12 +922,14 @@ def view_atoms_snapshot(
     like_vesta=True,
     label_sites=0,
     ghost_settings=None,
-    miller_indices=(),
+    miller_planes=(),
     zoom=1,
     resize_canvas=None,
     out_format="pil",
     scale_image=4,
     image_size=(500, 500),
+    bond_opacity=0.8,
+    miller_opacity=0.5,
 ):
     """Create an image, from a snapshot of the ``ase.Atoms`` or ``pymatgen.Structure`` GUI canvas.
 
@@ -929,9 +952,9 @@ def view_atoms_snapshot(
     ghost_settings: dict or None
         how to display atoms labelled as ghosts: (overrides fro defaults)
         these are determined if atoms.arrays["ghost"] is set
-    miller_indices: list[tuple]
-        list of (h, k, l, color, thickness) to project onto the unit cell,
-        e.g. [(1, 0, 0, "blue", 1), (2, 2, 2, "green", 3.5)].
+    miller_planes: list[tuple]
+        list of (h, k, l, colour, thickness, as_poly) to project onto the unit cell,
+        e.g. [(1, 0, 0, "blue", 1, True), (2, 2, 2, "green", 3.5, False)].
     zoom: float
         fraction to rescale the image by
     resize_canvas: tuple or None
@@ -945,6 +968,10 @@ def view_atoms_snapshot(
         scale image before rasterizing (used with 'pil')
     image_size: tuple[int]
         resize rasterized image (w, h) (used with 'pil')
+    bond_opacity: float
+        opacity of bond lines (SVG outputs only)
+    miller_opacity: float
+        opacity of miller planes (SVG outputs only)
 
     Returns
     -------
@@ -969,7 +996,7 @@ def view_atoms_snapshot(
         like_vesta=like_vesta,
         label_sites=label_sites,
         ghost_settings=ghost_settings,
-        miller_indices=miller_indices,
+        miller_planes=miller_planes,
         run=False,
         bring_to_top=False,
     )
@@ -988,13 +1015,16 @@ def view_atoms_snapshot(
                 canvas,
                 tag_funcs={
                     "bond-line": lambda itemtype, options, style: style.update(
-                        {"stroke-opacity": "0.8", "stroke-linecap": "round"}
+                        {"stroke-opacity": str(bond_opacity), "stroke-linecap": "round"}
                     ),
                     "atom-ghost": lambda itemtype, options, style: style.update(
                         {
                             "fill-opacity": str(ghost_settings["opacity"]),
                             "stroke-width": f"{ghost_settings['linewidth']}px",
                         }
+                    ),
+                    "miller-plane": lambda itemtype, options, style: style.update(
+                        {"fill-opacity": str(miller_opacity)}
                     ),
                 },
             )
