@@ -6,6 +6,7 @@ from collections import namedtuple
 import importlib
 from itertools import product
 import json
+from math import ceil
 import os
 import subprocess
 import sys
@@ -40,6 +41,7 @@ def get_default_settings(overrides=None):
         "force_vector_scale": 1.0,
         "velocity_vector_scale": 1.0,
         "show_unit_cell": True,
+        "unit_cell_segmentation": None,
         "show_axes": True,
         "show_bonds": False,
         "show_millers": True,
@@ -66,7 +68,9 @@ def get_ghost_settings(overrides=None):
     return dct
 
 
-def get_cell_coordinates(cell, origin=(0.0, 0.0, 0.0), show_repeats=None):
+def get_cell_coordinates(
+    cell, origin=(0.0, 0.0, 0.0), show_repeats=None, segment_length=None
+):
     """Get start and end points of lines segments used to draw cell.
 
     In the ``View`` implementation, they split the lines into sections,
@@ -135,7 +139,17 @@ def get_cell_coordinates(cell, origin=(0.0, 0.0, 0.0), show_repeats=None):
 
     lines = np.array(lines, dtype=float)
 
-    # TODO add option to segment lines (to 'improve' the z-order of lines)
+    if segment_length:
+        # split lines into segments (to 'improve' the z-order of lines)
+        new_lines = []
+        for (start, end) in lines:
+            length = np.linalg.norm(end - start)
+            segments = int(ceil(length / segment_length))
+            for i in range(segments):
+                new_end = start + (end - start) * (i + 1) / segments
+                new_lines.append([start, new_end])
+                start = new_end
+        lines = np.array(new_lines, dtype=float)
 
     return lines[:, 0], lines[:, 1]
 
@@ -340,7 +354,9 @@ class AtomGui(GUI):
 
         if self.showing_cell():
             cvec_starts, cvec_ends = get_cell_coordinates(
-                atoms.cell, show_repeats=atoms.info.get("unit_cell_repeat", None)
+                atoms.cell,
+                show_repeats=atoms.info.get("unit_cell_repeat", None),
+                segment_length=self.config["unit_cell_segmentation"],
             )
             # NOTE shifted=self.config["shift_cell"] was also parsed to the original function
             # which shifted the origin to (0.5, 0.5, 0.5),
@@ -430,13 +446,13 @@ class AtomGui(GUI):
                 atoms.positions[:],
                 cvec_starts,
                 cvec_ends,
-                all_miller_points,
+                all_miller_points or np.empty((0, 3)),
                 bond_starts,
                 bond_ends,
             )
         )
-        # record positions with legacy array name, used by View.move
-        self.X_pos = atoms.positions[:]
+        # record atom positions with legacy array name, used by View.move
+        self.X_pos = self.X[: len(atoms.positions)]
 
     def circle(self, color, selected, *bbox, tags=()):
         """Add a circle element.
@@ -588,11 +604,19 @@ class AtomGui(GUI):
             np.einsum("ijk, km -> ijm", self.el_miller_planes["planes"], axes) - offset
         )
 
+        # compute atom radii
+        atom_radii = self.get_covalent_radii() * self.scale
+        if self.window["toggle-show-bonds"]:
+            atom_radii *= 0.65
+        atom_xy = self.P = position_atoms[:, :2]  # note self.P is used by View.release
+        atom_lbound = (atom_xy - atom_radii[:, None]).round().astype(int)
+        atom_diameters = (2 * atom_radii).round().astype(int)
+
         # work out the order to add elements in (z-order)
         # Note: for lines, we use the largest z of the start/end
         zorder_indices = self.indices = np.concatenate(
             (
-                position_atoms,
+                position_atoms + atom_radii[:, None],
                 pos_cell_lines.max(axis=1),
                 pos_bond_lines.max(axis=1),
                 pos_miller_lines.max(axis=1),
@@ -607,26 +631,15 @@ class AtomGui(GUI):
         num_bond_lines = len(pos_bond_lines)
         num_miller_lines = len(pos_miller_lines)
 
-        # compute values necessary for drawing atoms
-        atom_radii = self.get_covalent_radii() * self.scale
-        if self.window["toggle-show-bonds"]:
-            atom_radii *= 0.65
-        atom_coord = self.P = position_atoms[:, :2]
-        atom_lbound = (atom_coord - atom_radii[:, None]).round().astype(int)
+        # compute other values necessary for drawing atoms
         celldisp = (
             (np.dot(self.atoms.get_celldisp().reshape((3,)), axes)).round().astype(int)
         )
-        atom_diameters = (2 * atom_radii).round().astype(int)
-
         constrained = ~self.images.get_dynamic(self.atoms)
         selected = self.images.selected
         visible = self.images.visible
-
-        # set self.labels for atoms
-        self.update_labels()
-
-        # extension for partial occupancies
-        tags = self.atoms.get_tags()
+        self.update_labels()  # set self.labels for atoms
+        tags = self.atoms.get_tags()  # extension for partial occupancies
 
         # extension for ghost atoms
         if "ghost" in self.atoms.arrays:
@@ -928,6 +941,7 @@ def view_atoms_snapshot(
     out_format="pil",
     scale_image=4,
     image_size=(500, 500),
+    atom_opacity=0.95,
     bond_opacity=0.8,
     miller_opacity=0.5,
 ):
@@ -968,6 +982,8 @@ def view_atoms_snapshot(
         scale image before rasterizing (used with 'pil')
     image_size: tuple[int]
         resize rasterized image (w, h) (used with 'pil')
+    atom_opacity: float
+        opacity of atoms (SVG outputs only)
     bond_opacity: float
         opacity of bond lines (SVG outputs only)
     miller_opacity: float
@@ -1014,14 +1030,17 @@ def view_atoms_snapshot(
             image = create_svg_content(
                 canvas,
                 tag_funcs={
-                    "bond-line": lambda itemtype, options, style: style.update(
-                        {"stroke-opacity": str(bond_opacity), "stroke-linecap": "round"}
+                    "atom-circle": lambda itemtype, options, style: style.update(
+                        {"fill-opacity": str(atom_opacity)}
                     ),
                     "atom-ghost": lambda itemtype, options, style: style.update(
                         {
                             "fill-opacity": str(ghost_settings["opacity"]),
                             "stroke-width": f"{ghost_settings['linewidth']}px",
                         }
+                    ),
+                    "bond-line": lambda itemtype, options, style: style.update(
+                        {"stroke-opacity": str(bond_opacity), "stroke-linecap": "round"}
                     ),
                     "miller-plane": lambda itemtype, options, style: style.update(
                         {"fill-opacity": str(miller_opacity)}
