@@ -443,6 +443,97 @@ class AtomGui(GUI):
             tags=tags,
         )
 
+    def _draw_atom(
+        self, obj_indx, diameter, atom_lbound, selected, color, ghost, tag, movecolor
+    ):
+        """Draw a single atom."""
+        circle = self.circle
+        arc = self.window.arc
+
+        atom_color = lighten_hexcolor(
+            color, fraction=self.ghost_settings["lighten"] if ghost else 0.0
+        )
+
+        if "occupancy" in self.atoms.info:
+            site_occ = self.atoms.info["occupancy"][tag]
+            # first an empty circle if a site is not fully occupied
+            if (np.sum([vector for vector in site_occ.values()])) < 1.0:
+                fill = "#ffffff"
+                circle(
+                    fill,
+                    selected,
+                    atom_lbound[0],
+                    atom_lbound[1],
+                    atom_lbound[0] + diameter,
+                    atom_lbound[1] + diameter,
+                )
+            start = 0
+            # start with the dominant species
+            for sym, occ in sorted(site_occ.items(), key=lambda x: x[1], reverse=True):
+                if np.round(occ, decimals=4) == 1.0:
+                    circle(
+                        atom_color,
+                        selected,
+                        atom_lbound[0],
+                        atom_lbound[1],
+                        atom_lbound[0] + diameter,
+                        atom_lbound[1] + diameter,
+                        tags=("atom-circle", "atom-ghost")
+                        if ghost
+                        else ("atom-circle",),
+                    )
+                else:
+                    # TODO alter for ghost
+                    extent = 360.0 * occ
+                    arc(
+                        self.colors[atomic_numbers[sym]],
+                        selected,
+                        start,
+                        extent,
+                        atom_lbound[0],
+                        atom_lbound[1],
+                        atom_lbound[0] + diameter,
+                        atom_lbound[1] + diameter,
+                    )
+                    start += extent
+        else:
+            # legacy behavior
+            # Draw the atoms
+            if (
+                self.moving
+                and obj_indx < len(self.move_atoms_mask)
+                and self.move_atoms_mask[obj_indx]
+            ):
+                circle(
+                    movecolor,
+                    False,
+                    atom_lbound[0] - 4,
+                    atom_lbound[1] - 4,
+                    atom_lbound[0] + diameter + 4,
+                    atom_lbound[1] + diameter + 4,
+                )
+
+            circle(
+                atom_color,
+                selected,
+                atom_lbound[0],
+                atom_lbound[1],
+                atom_lbound[0] + diameter,
+                atom_lbound[1] + diameter,
+                tags=("atom-circle", "atom-ghost") if ghost else ("atom-circle",),
+            )
+
+        # Draw labels on the atoms
+        if self.labels is not None:
+            if ghost and not self.ghost_settings["label"]:
+                pass
+            else:
+                self.window.text(
+                    atom_lbound[0] + diameter / 2,
+                    atom_lbound[1] + diameter / 2,
+                    str(self.labels[obj_indx]),
+                )
+
     def draw(self, status=True):
         """Draw all required objects on the canvas.
 
@@ -549,108 +640,29 @@ class AtomGui(GUI):
 
         # setup drawing functions
         colors = self.get_colors()
-        circle = self.circle
-        arc = self.window.arc
         line = self.window.line
         if self.arrowkey_mode == self.ARROWKEY_MOVE:
             movecolor = GREEN
         elif self.arrowkey_mode == self.ARROWKEY_ROTATE:
             movecolor = PURPLE
+        else:
+            movecolor = None
 
         for obj_indx in zorder_indices:
             if obj_indx < num_atoms:
                 diameter = atom_diameters[obj_indx]
                 if visible[obj_indx]:
-                    atom_color = lighten_hexcolor(
+                    # draw atom element
+                    self._draw_atom(
+                        obj_indx,
+                        diameter,
+                        atom_lbound[obj_indx],
+                        selected[obj_indx],
                         colors[obj_indx],
-                        fraction=self.ghost_settings["lighten"]
-                        if ghost[obj_indx]
-                        else 0.0,
+                        ghost[obj_indx],
+                        tags[obj_indx],
+                        movecolor,
                     )
-
-                    if "occupancy" in self.atoms.info:
-                        site_occ = self.atoms.info["occupancy"][tags[obj_indx]]
-                        # first an empty circle if a site is not fully occupied
-                        if (np.sum([vector for vector in site_occ.values()])) < 1.0:
-                            fill = "#ffffff"
-                            circle(
-                                fill,
-                                selected[obj_indx],
-                                atom_lbound[obj_indx, 0],
-                                atom_lbound[obj_indx, 1],
-                                atom_lbound[obj_indx, 0] + diameter,
-                                atom_lbound[obj_indx, 1] + diameter,
-                            )
-                        start = 0
-                        # start with the dominant species
-                        for sym, occ in sorted(
-                            site_occ.items(), key=lambda x: x[1], reverse=True
-                        ):
-                            if np.round(occ, decimals=4) == 1.0:
-                                circle(
-                                    atom_color,
-                                    selected[obj_indx],
-                                    atom_lbound[obj_indx, 0],
-                                    atom_lbound[obj_indx, 1],
-                                    atom_lbound[obj_indx, 0] + diameter,
-                                    atom_lbound[obj_indx, 1] + diameter,
-                                    tags=("atom-circle", "atom-ghost")
-                                    if ghost[obj_indx]
-                                    else ("atom-circle",),
-                                )
-                            else:
-                                # TODO alter for ghost
-                                extent = 360.0 * occ
-                                arc(
-                                    self.colors[atomic_numbers[sym]],
-                                    selected[obj_indx],
-                                    start,
-                                    extent,
-                                    atom_lbound[obj_indx, 0],
-                                    atom_lbound[obj_indx, 1],
-                                    atom_lbound[obj_indx, 0] + diameter,
-                                    atom_lbound[obj_indx, 1] + diameter,
-                                )
-                                start += extent
-                    else:
-                        # legacy behavior
-                        # Draw the atoms
-                        if (
-                            self.moving
-                            and obj_indx < len(self.move_atoms_mask)
-                            and self.move_atoms_mask[obj_indx]
-                        ):
-                            circle(
-                                movecolor,
-                                False,
-                                atom_lbound[obj_indx, 0] - 4,
-                                atom_lbound[obj_indx, 1] - 4,
-                                atom_lbound[obj_indx, 0] + diameter + 4,
-                                atom_lbound[obj_indx, 1] + diameter + 4,
-                            )
-
-                        circle(
-                            atom_color,
-                            selected[obj_indx],
-                            atom_lbound[obj_indx, 0],
-                            atom_lbound[obj_indx, 1],
-                            atom_lbound[obj_indx, 0] + diameter,
-                            atom_lbound[obj_indx, 1] + diameter,
-                            tags=("atom-circle", "atom-ghost")
-                            if ghost[obj_indx]
-                            else ("atom-circle",),
-                        )
-
-                    # Draw labels on the atoms
-                    if self.labels is not None:
-                        if ghost[obj_indx] and not self.ghost_settings["label"]:
-                            pass
-                        else:
-                            self.window.text(
-                                atom_lbound[obj_indx, 0] + diameter / 2,
-                                atom_lbound[obj_indx, 1] + diameter / 2,
-                                str(self.labels[obj_indx]),
-                            )
 
                     # Draw cross on constrained or ghost atoms
                     if constrained[obj_indx] or (
