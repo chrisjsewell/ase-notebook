@@ -4,9 +4,7 @@ The module subclasses ase (v3.18.0) classes, to add additional functionality.
 """
 from collections import namedtuple
 import importlib
-from itertools import product
 import json
-from math import ceil
 import os
 import subprocess
 import sys
@@ -21,12 +19,13 @@ from ase.gui import ui
 from ase.gui.gui import GUI
 from ase.gui.images import Images
 from ase.gui.status import Status
-from ase.gui.view import get_bonds, GREEN, PURPLE, View
+from ase.gui.view import GREEN, PURPLE, View
 import numpy as np
 from pymatgen import Structure
 from pymatgen.io.ase import AseAtomsAdaptor
 
-from .canvas2svg import create_svg_content
+from aiida_2d.visualize.canvas2svg import create_svg_content
+from aiida_2d.visualize.core import compute_element_coordinates, lighten_hexcolor
 
 
 def get_default_settings(overrides=None):
@@ -66,139 +65,6 @@ def get_ghost_settings(overrides=None):
     if overrides:
         dct.update(overrides)
     return dct
-
-
-def get_cell_coordinates(
-    cell, origin=(0.0, 0.0, 0.0), show_repeats=None, segment_length=None
-):
-    """Get start and end points of lines segments used to draw cell.
-
-    In the ``View`` implementation, they split the lines into sections,
-    to create a dashed effect, but instead this can be achieved by using the ``dashed``
-    option of ``tkinter.canvas.create_line`` method.
-    It be noted though that this approach may be platform dependant:
-    https://stackoverflow.com/questions/41796792/tkinter-canvas-dash-option-is-not-behaving-as-expected
-
-    We also add an origin option, to allow for different cells to be created.
-    """
-    reps_a, reps_b, reps_c = show_repeats or (1, 1, 1)
-    vec_a, vec_b, vec_c = cell
-    has_a = np.linalg.norm(vec_a) > 1e-9
-    has_b = np.linalg.norm(vec_b) > 1e-9
-    has_c = np.linalg.norm(vec_c) > 1e-9
-    vec_a = vec_a / reps_a
-    vec_b = vec_b / reps_b
-    vec_c = vec_c / reps_c
-
-    lines = []
-
-    for rep_a, rep_b, rep_c in product(
-        *(range(1, reps_a + 1), range(1, reps_b + 1), range(1, reps_c + 1))
-    ):
-        rep_origin = (
-            np.array(origin)
-            + (rep_a - 1) * vec_a
-            + (rep_b - 1) * vec_b
-            + (rep_c - 1) * vec_c
-        )
-        if has_a:
-            lines.append([rep_origin, rep_origin + vec_a])
-        if has_b:
-            lines.append([rep_origin, rep_origin + vec_b])
-        if has_c:
-            lines.append([rep_origin, rep_origin + vec_c])
-        if has_a and has_b:
-            lines.extend(
-                [
-                    [rep_origin + vec_a, rep_origin + vec_a + vec_b],
-                    [rep_origin + vec_a + vec_b, rep_origin + vec_b],
-                ]
-            )
-        if has_a and has_c:
-            lines.extend(
-                [
-                    [rep_origin + vec_a, rep_origin + vec_a + vec_c],
-                    [rep_origin + vec_c, rep_origin + vec_c + vec_a],
-                ]
-            )
-        if has_b and has_c:
-            lines.extend(
-                [
-                    [rep_origin + vec_b, rep_origin + vec_b + vec_c],
-                    [rep_origin + vec_c, rep_origin + vec_c + vec_b],
-                ]
-            )
-        if has_a and has_b and has_c:
-            lines.extend(
-                [
-                    [rep_origin + vec_a + vec_b, rep_origin + vec_a + vec_b + vec_c],
-                    [rep_origin + vec_c + vec_a, rep_origin + vec_c + vec_a + vec_b],
-                    [rep_origin + vec_c + vec_a + vec_b, rep_origin + vec_c + vec_b],
-                ]
-            )
-
-    lines = np.array(lines, dtype=float)
-
-    if segment_length:
-        # split lines into segments (to 'improve' the z-order of lines)
-        new_lines = []
-        for (start, end) in lines:
-            length = np.linalg.norm(end - start)
-            segments = int(ceil(length / segment_length))
-            for i in range(segments):
-                new_end = start + (end - start) * (i + 1) / segments
-                new_lines.append([start, new_end])
-                start = new_end
-        lines = np.array(new_lines, dtype=float)
-
-    return lines[:, 0], lines[:, 1]
-
-
-def get_miller_coordinates(cell, miller):
-    """Compute the points at which a miller index intercepts with a unit cell boundary."""
-    vec_a, vec_b, vec_c = np.array(cell, dtype=float)
-    hval, kval, lval = miller
-
-    if hval < 0 or kval < 0 or lval < 0:
-        # TODO compute negative miller intercepts
-        # look at scipt in https://www.doitpoms.ac.uk/tlplib/miller_indices/printall.php
-        # they appear to use a transpose
-        raise NotImplementedError("h, k or l less than zero")
-
-    h_is_zero, k_is_zero, l_is_zero = np.isclose(miller, 0)
-
-    mod_a = np.inf if h_is_zero else vec_a / hval
-    mod_b = np.inf if k_is_zero else vec_b / kval
-    mod_c = np.inf if l_is_zero else vec_c / lval
-
-    if h_is_zero and k_is_zero and l_is_zero:
-        raise ValueError("h, k, l all 0")
-    elif k_is_zero and l_is_zero:
-        points = [mod_a, mod_a + vec_b, mod_a + vec_b + vec_c, mod_a + vec_c]
-    elif h_is_zero and l_is_zero:
-        points = [mod_b, mod_b + vec_a, mod_b + vec_a + vec_c, mod_b + vec_c]
-    elif h_is_zero and k_is_zero:
-        points = [mod_c, mod_c + vec_a, mod_c + vec_a + vec_b, mod_c + vec_b]
-    elif h_is_zero:
-        points = [mod_b, mod_c, mod_c + vec_a, mod_b + vec_a]
-    elif k_is_zero:
-        points = [mod_a, mod_c, mod_c + vec_b, mod_a + vec_b]
-    elif l_is_zero:
-        points = [mod_a, mod_b, mod_b + vec_c, mod_a + vec_c]
-    else:
-        points = [mod_a, mod_b, mod_c]
-    return np.array(points)
-
-
-def lighten_hexcolor(hexcolor, fraction):
-    """Lighten a color (in hex format) by a fraction."""
-    if fraction <= 0:
-        return hexcolor
-    hexcolor = hexcolor.lstrip("#")
-    rgb = np.array([int(hexcolor[i : i + 2], 16) for i in (0, 2, 4)])
-    white = np.array([255, 255, 255])
-    rgb = rgb + (white - rgb) * fraction
-    return "#{0:02X}{1:02X}{2:02X}".format(*(int(x * 255) for x in rgb))
 
 
 class AtomImages(Images):
@@ -337,6 +203,14 @@ class AtomGui(GUI):
         """Return list of miller indices to project onto the unit cell, e.g. [(h, k, l), ...]."""
         return self._miller_planes[:]
 
+    def get_miller_color(self, index):
+        """Return colour of miller plane."""
+        return self._miller_planes[index][3]
+
+    def get_miller_thickness(self, index):
+        """Return thickness of miller plane lines."""
+        return self._miller_planes[index][4]
+
     def set_atoms(self, atoms):
         """Set the atoms, unit cell(s) and bonds to draw.
 
@@ -350,107 +224,19 @@ class AtomGui(GUI):
         - compute miller index planes, by points that intercept with the unit cell
 
         """
-        self.el_atoms = atoms.positions
-
-        if self.showing_cell():
-            cvec_starts, cvec_ends = get_cell_coordinates(
-                atoms.cell,
-                show_repeats=atoms.info.get("unit_cell_repeat", None),
-                segment_length=self.config["unit_cell_segmentation"],
-            )
-            # NOTE shifted=self.config["shift_cell"] was also parsed to the original function
-            # which shifted the origin to (0.5, 0.5, 0.5),
-            # however, no where in the code is this ever set to True
-        else:
-            cvec_starts = cvec_ends = np.zeros((0, 3))
-
-        self.el_cell_lines = {"lines": np.stack((cvec_starts, cvec_ends), axis=1)}
-
-        self.el_miller_lines = {"starts": [], "ends": [], "colors": [], "thickness": []}
-        self.el_miller_planes = {"planes": [], "colors": [], "thickness": []}
-        all_miller_points = []
-
-        if self.showing_millers() and self.get_millers():
-
-            for (h, k, l, color, thickness, plane) in self.get_millers():
-                miller_points = get_miller_coordinates(atoms.cell, (h, k, l)).tolist()
-                all_miller_points.extend(miller_points)
-                if plane:
-                    self.el_miller_planes["planes"].append(
-                        miller_points
-                        if len(miller_points) == 4
-                        else miller_points + [[np.nan, np.nan, np.nan]]
-                    )
-                    self.el_miller_planes["colors"].append(color)
-                    self.el_miller_planes["thickness"].append(thickness)
-                else:
-                    self.el_miller_lines["starts"].extend(miller_points)
-                    self.el_miller_lines["ends"].extend(
-                        miller_points[1:] + [miller_points[0]]
-                    )
-                    self.el_miller_lines["colors"].extend(
-                        [color for _ in miller_points]
-                    )
-                    self.el_miller_lines["thickness"].extend(
-                        [thickness for _ in miller_points]
-                    )
-
-        self.el_miller_lines["lines"] = np.stack(
-            (
-                self.el_miller_lines.pop("starts") or np.zeros((0, 3)),
-                self.el_miller_lines.pop("ends") or np.zeros((0, 3)),
-            ),
-            axis=1,
+        elements, all_coordinates = compute_element_coordinates(
+            atoms,
+            show_uc=self.showing_cell(),
+            uc_segments=self.config["unit_cell_segmentation"],
+            show_bonds=self.showing_bonds(),
+            bond_supercell=self.images.repeat,
+            atom_radii=self.get_covalent_radii(),
+            miller_planes=self.get_millers() if self.showing_millers() else None,
         )
-        self.el_miller_planes["planes"] = np.array(
-            self.el_miller_planes["planes"] or np.zeros((0, 4, 3)), dtype=float
-        )
-
-        if self.showing_bonds():
-            atomscopy = atoms.copy()
-            atomscopy.cell *= self.images.repeat[:, np.newaxis]
-            bonds = get_bonds(atomscopy, self.get_covalent_radii(atoms))
-            anums = atoms.get_atomic_numbers()
-            bond_colors = [
-                (self.colors[anums[bond[0]]], self.colors[anums[bond[1]]])
-                for bond in bonds
-            ]
-        else:
-            bonds = np.empty((0, 5), int)
-            bond_colors = []
-
-        if len(bonds) > 0:
-            positions = atoms.positions
-            af = self.images.repeat[:, np.newaxis] * atoms.cell
-            a = positions[bonds[:, 0]]
-            b = positions[bonds[:, 1]] + np.dot(bonds[:, 2:], af) - a
-            d = (b ** 2).sum(1) ** 0.5
-            r = 0.65 * self.get_covalent_radii()
-            x0 = (r[bonds[:, 0]] / d).reshape((-1, 1))
-            x1 = (r[bonds[:, 1]] / d).reshape((-1, 1))
-            bond_starts = a + b * x0
-            b *= 1.0 - x0 - x1
-            b[bonds[:, 2:].any(1)] *= 0.5
-            bond_ends = bond_starts + b
-        else:
-            bond_starts = bond_ends = np.empty((0, 3))
-
-        self.el_bond_lines = {
-            "lines": np.stack((bond_starts, bond_ends), axis=1),
-            "colors": bond_colors,
-        }
+        self.elements = elements
 
         # record all positions (atoms first) with legacy array name, for use by View.focus
-        self.X = np.concatenate(
-            (
-                atoms.positions[:],
-                cvec_starts,
-                cvec_ends,
-                all_miller_points or np.empty((0, 3)),
-                bond_starts,
-                bond_ends,
-            )
-        )
+        self.X = all_coordinates
         # record atom positions with legacy array name, used by View.move
         self.X_pos = self.X[: len(atoms.positions)]
 
@@ -584,31 +370,22 @@ class AtomGui(GUI):
         offset[:2] -= 0.5 * self.window.size
 
         # align elements to axes
-        position_atoms = np.dot(self.el_atoms, axes) - offset
-        pos_cell_lines = (
-            (np.einsum("ijk, km -> ijm", self.el_cell_lines["lines"], axes) - offset)
-            .round()
-            .astype(int)
-        )
-        pos_bond_lines = (
-            (np.einsum("ijk, km -> ijm", self.el_bond_lines["lines"], axes) - offset)
-            .round()
-            .astype(int)
-        )
-        pos_miller_lines = (
-            (np.einsum("ijk, km -> ijm", self.el_miller_lines["lines"], axes) - offset)
-            .round()
-            .astype(int)
-        )
-        pos_miller_planes = (
-            np.einsum("ijk, km -> ijm", self.el_miller_planes["planes"], axes) - offset
-        )
+        positions = {
+            k: (
+                np.dot(v["coordinates"], axes)
+                if v["type"] == "point"
+                else np.einsum("ijk, km -> ijm", v["coordinates"], axes)
+            )
+            - offset
+            for k, v in self.elements.items()
+        }
 
         # compute atom radii
         atom_radii = self.get_covalent_radii() * self.scale
         if self.window["toggle-show-bonds"]:
             atom_radii *= 0.65
-        atom_xy = self.P = position_atoms[:, :2]  # note self.P is used by View.release
+        # note self.P is used by View.release
+        atom_xy = self.P = positions["atoms"][:, :2].round().astype(int)
         atom_lbound = (atom_xy - atom_radii[:, None]).round().astype(int)
         atom_diameters = (2 * atom_radii).round().astype(int)
 
@@ -616,22 +393,29 @@ class AtomGui(GUI):
         # Note: for lines, we use the largest z of the start/end
         zorder_indices = self.indices = np.concatenate(
             (
-                position_atoms + atom_radii[:, None],
-                pos_cell_lines.max(axis=1),
-                pos_bond_lines.max(axis=1),
-                pos_miller_lines.max(axis=1),
+                positions["atoms"] + atom_radii[:, None],
+                positions["cell_lines"].max(axis=1),
+                positions["bond_lines"].max(axis=1),
+                positions["miller_lines"].max(axis=1),
                 # the final plane coordinate can be np.nan, if it is a triangle
-                np.nanmax(pos_miller_planes, axis=1),
+                np.nanmax(positions["miller_planes"], axis=1),
             )
         )[:, 2].argsort()
 
         # record the length of each element, so we can map to the zorder_indices
-        num_atoms = len(position_atoms)
-        num_cell_lines = len(pos_cell_lines)
-        num_bond_lines = len(pos_bond_lines)
-        num_miller_lines = len(pos_miller_lines)
+        num_atoms = len(positions["atoms"])
+        num_cell_lines = len(positions["cell_lines"])
+        num_bond_lines = len(positions["bond_lines"])
+        num_miller_lines = len(positions["miller_lines"])
+
+        # ensure coordinates are integer
+        positions = {
+            k: v.round().astype(int) if k != "miller_planes" else v
+            for k, v in positions.items()
+        }
 
         # compute other values necessary for drawing atoms
+        atom_colors = self.get_colors()
         celldisp = (
             (np.dot(self.atoms.get_celldisp().reshape((3,)), axes)).round().astype(int)
         )
@@ -639,7 +423,7 @@ class AtomGui(GUI):
         selected = self.images.selected
         visible = self.images.visible
         self.update_labels()  # set self.labels for atoms
-        tags = self.atoms.get_tags()  # extension for partial occupancies
+        atom_tags = self.atoms.get_tags()  # extension for partial occupancies
 
         # extension for ghost atoms
         if "ghost" in self.atoms.arrays:
@@ -661,10 +445,9 @@ class AtomGui(GUI):
             vector_arrays.append(f * self.force_vector_scale)
 
         for array in vector_arrays:
-            array[:] = np.dot(array, axes) + position_atoms
+            array[:] = (np.dot(array, axes) + positions["atoms"]).round().astype(int)
 
         # setup drawing functions
-        colors = self.get_colors()
         line = self.window.line
         if self.arrowkey_mode == self.ARROWKEY_MOVE:
             movecolor = GREEN
@@ -675,64 +458,67 @@ class AtomGui(GUI):
 
         for obj_indx in zorder_indices:
             if obj_indx < num_atoms:
+
+                if not visible[obj_indx]:
+                    continue
+
                 diameter = atom_diameters[obj_indx]
-                if visible[obj_indx]:
-                    # draw atom element
-                    self._draw_atom(
-                        obj_indx,
-                        diameter,
-                        atom_lbound[obj_indx],
-                        selected[obj_indx],
-                        colors[obj_indx],
-                        ghost[obj_indx],
-                        tags[obj_indx],
-                        movecolor,
+                # draw atom element
+                self._draw_atom(
+                    obj_indx,
+                    diameter,
+                    atom_lbound[obj_indx],
+                    selected[obj_indx],
+                    atom_colors[obj_indx],
+                    ghost[obj_indx],
+                    atom_tags[obj_indx],
+                    movecolor,
+                )
+
+                # Draw cross on constrained or ghost atoms
+                if constrained[obj_indx] or (
+                    ghost[obj_indx] and self.ghost_settings["cross"]
+                ):
+                    rad1 = int(0.14644 * diameter)
+                    rad2 = int(0.85355 * diameter)
+                    line(
+                        (
+                            atom_lbound[obj_indx, 0] + rad1,
+                            atom_lbound[obj_indx, 1] + rad1,
+                            atom_lbound[obj_indx, 0] + rad2,
+                            atom_lbound[obj_indx, 1] + rad2,
+                        )
+                    )
+                    line(
+                        (
+                            atom_lbound[obj_indx, 0] + rad2,
+                            atom_lbound[obj_indx, 1] + rad1,
+                            atom_lbound[obj_indx, 0] + rad1,
+                            atom_lbound[obj_indx, 1] + rad2,
+                        )
                     )
 
-                    # Draw cross on constrained or ghost atoms
-                    if constrained[obj_indx] or (
-                        ghost[obj_indx] and self.ghost_settings["cross"]
-                    ):
-                        rad1 = int(0.14644 * diameter)
-                        rad2 = int(0.85355 * diameter)
-                        line(
-                            (
-                                atom_lbound[obj_indx, 0] + rad1,
-                                atom_lbound[obj_indx, 1] + rad1,
-                                atom_lbound[obj_indx, 0] + rad2,
-                                atom_lbound[obj_indx, 1] + rad2,
-                            )
-                        )
-                        line(
-                            (
-                                atom_lbound[obj_indx, 0] + rad2,
-                                atom_lbound[obj_indx, 1] + rad1,
-                                atom_lbound[obj_indx, 0] + rad1,
-                                atom_lbound[obj_indx, 1] + rad2,
-                            )
-                        )
-
-                    # Draw velocities and/or forces
-                    for vector in vector_arrays:
-                        assert not np.isnan(vector).any()
-                        self.arrow(
-                            (
-                                position_atoms[obj_indx, 0],
-                                position_atoms[obj_indx, 1],
-                                vector[obj_indx, 0],
-                                vector[obj_indx, 1],
-                            ),
-                            width=2,
-                        )
+                # Draw velocities and/or forces
+                for vector in vector_arrays:
+                    assert not np.isnan(vector).any()
+                    self.arrow(
+                        (
+                            positions["atoms"][obj_indx, 0],
+                            positions["atoms"][obj_indx, 1],
+                            vector[obj_indx, 0],
+                            vector[obj_indx, 1],
+                        ),
+                        width=2,
+                    )
             elif obj_indx < num_atoms + num_cell_lines:
                 # Draw unit cell lines
                 line_idx = obj_indx - num_atoms
                 self.window.canvas.create_line(
                     (
-                        pos_cell_lines[line_idx, 0, 0] + celldisp[0],
-                        pos_cell_lines[line_idx, 0, 1] + celldisp[1],
-                        pos_cell_lines[line_idx, 1, 0] + celldisp[0],
-                        pos_cell_lines[line_idx, 1, 1] + celldisp[1],
+                        positions["cell_lines"][line_idx, 0, 0] + celldisp[0],
+                        positions["cell_lines"][line_idx, 0, 1] + celldisp[1],
+                        positions["cell_lines"][line_idx, 1, 0] + celldisp[0],
+                        positions["cell_lines"][line_idx, 1, 1] + celldisp[1],
                     ),
                     width=1,
                     dash=(6, 4),  # dash pattern = (line length, gap length, ..)
@@ -742,46 +528,49 @@ class AtomGui(GUI):
                 # Draw bond lines, splitting in half, and colouring each half by nearest atom
                 # TODO would be nice if bonds had an outline
                 line_idx = obj_indx - num_atoms - num_cell_lines
+                start_atom, end_atom = self.elements["bond_lines"]["atom_index"][
+                    line_idx
+                ]
                 self.window.canvas.create_line(
                     (
-                        pos_bond_lines[line_idx, 0, 0],
-                        pos_bond_lines[line_idx, 0, 1],
-                        pos_bond_lines[line_idx, 0, 0]
+                        positions["bond_lines"][line_idx, 0, 0],
+                        positions["bond_lines"][line_idx, 0, 1],
+                        positions["bond_lines"][line_idx, 0, 0]
                         + 0.5
                         * (
-                            pos_bond_lines[line_idx, 1, 0]
-                            - pos_bond_lines[line_idx, 0, 0]
+                            positions["bond_lines"][line_idx, 1, 0]
+                            - positions["bond_lines"][line_idx, 0, 0]
                         ),
-                        pos_bond_lines[line_idx, 0, 1]
+                        positions["bond_lines"][line_idx, 0, 1]
                         + 0.5
                         * (
-                            pos_bond_lines[line_idx, 1, 1]
-                            - pos_bond_lines[line_idx, 0, 1]
+                            positions["bond_lines"][line_idx, 1, 1]
+                            - positions["bond_lines"][line_idx, 0, 1]
                         ),
                     ),
                     width=bond_linewidth,
-                    fill=self.el_bond_lines["colors"][line_idx][0],
+                    fill=atom_colors[start_atom],
                     tags=("bond-line",),
                 )
                 self.window.canvas.create_line(
                     (
-                        pos_bond_lines[line_idx, 0, 0]
+                        positions["bond_lines"][line_idx, 0, 0]
                         + 0.5
                         * (
-                            pos_bond_lines[line_idx, 1, 0]
-                            - pos_bond_lines[line_idx, 0, 0]
+                            positions["bond_lines"][line_idx, 1, 0]
+                            - positions["bond_lines"][line_idx, 0, 0]
                         ),
-                        pos_bond_lines[line_idx, 0, 1]
+                        positions["bond_lines"][line_idx, 0, 1]
                         + 0.5
                         * (
-                            pos_bond_lines[line_idx, 1, 1]
-                            - pos_bond_lines[line_idx, 0, 1]
+                            positions["bond_lines"][line_idx, 1, 1]
+                            - positions["bond_lines"][line_idx, 0, 1]
                         ),
-                        pos_bond_lines[line_idx, 1, 0],
-                        pos_bond_lines[line_idx, 1, 1],
+                        positions["bond_lines"][line_idx, 1, 0],
+                        positions["bond_lines"][line_idx, 1, 1],
                     ),
                     width=bond_linewidth,
-                    fill=self.el_bond_lines["colors"][line_idx][1],
+                    fill=atom_colors[end_atom],
                     tags=("bond-line",),
                 )
             elif (
@@ -791,13 +580,17 @@ class AtomGui(GUI):
                 miller_indx = obj_indx - num_atoms - num_cell_lines - num_bond_lines
                 self.window.canvas.create_line(
                     (
-                        pos_miller_lines[miller_indx, 0, 0] + celldisp[0],
-                        pos_miller_lines[miller_indx, 0, 1] + celldisp[1],
-                        pos_miller_lines[miller_indx, 1, 0] + celldisp[0],
-                        pos_miller_lines[miller_indx, 1, 1] + celldisp[1],
+                        positions["miller_lines"][miller_indx, 0, 0] + celldisp[0],
+                        positions["miller_lines"][miller_indx, 0, 1] + celldisp[1],
+                        positions["miller_lines"][miller_indx, 1, 0] + celldisp[0],
+                        positions["miller_lines"][miller_indx, 1, 1] + celldisp[1],
                     ),
-                    width=self.el_miller_lines["thickness"][miller_indx],
-                    fill=self.el_miller_lines["colors"][miller_indx],
+                    width=self.get_miller_thickness(
+                        self.elements["miller_lines"]["index"][miller_indx]
+                    ),
+                    fill=self.get_miller_color(
+                        self.elements["miller_lines"]["index"][miller_indx]
+                    ),
                     tags=("miller-line",),
                 )
             else:
@@ -808,7 +601,7 @@ class AtomGui(GUI):
                     - num_bond_lines
                     - num_miller_lines
                 )
-                plane = pos_miller_planes[miller_indx]
+                plane = positions["miller_planes"][miller_indx]
                 if np.isnan(plane[3, 0]):
                     # it is a triangle, and we can ignore the last point
                     plane = plane[:3, :]
@@ -819,9 +612,9 @@ class AtomGui(GUI):
                 ]
                 self.window.canvas.create_polygon(
                     plane_pts,
-                    width=self.el_miller_planes["thickness"][miller_indx],
-                    outline=self.el_miller_planes["colors"][miller_indx],
-                    fill=self.el_miller_planes["colors"][miller_indx],
+                    width=self.get_miller_thickness(miller_indx),
+                    outline=self.get_miller_color(miller_indx),
+                    fill=self.get_miller_color(miller_indx),
                     tags=("miller-plane",),
                 )
 
@@ -1052,12 +845,9 @@ def view_atoms_snapshot(
 
                 image = SVG(image)
             elif out_format == "svg_util":
-                from svgutils.compose import SVG
                 from svgutils.transform import fromstring
 
-                svg = fromstring(image)
-                image = SVG()
-                image.root = svg.getroot().root
+                image = fromstring(image)
         else:
             df, fname = tempfile.mkstemp()
             try:
