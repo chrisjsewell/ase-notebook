@@ -25,7 +25,7 @@ from pymatgen.io.ase import AseAtomsAdaptor
 
 from aiida_2d.visualize.canvas2svg import create_svg_content
 from aiida_2d.visualize.core import (
-    compute_element_coordinates,
+    initialise_element_groups,
     lighten_hexcolor,
     VESTA_ELEMENT_INFO,
 )
@@ -227,7 +227,7 @@ class AtomGui(GUI):
         - compute miller index planes, by points that intercept with the unit cell
 
         """
-        elements = compute_element_coordinates(
+        elements = initialise_element_groups(
             atoms,
             atom_radii=self.get_covalent_radii(),
             show_uc=self.showing_cell(),

@@ -511,7 +511,7 @@ class DrawGroup(Mapping):
             yield self[keys[i][0]][keys[i][1]]
 
 
-def compute_element_coordinates(
+def initialise_element_groups(
     atoms,
     atom_radii,
     show_uc=True,
@@ -561,9 +561,9 @@ def compute_element_coordinates(
 
     if miller_planes is not None:
 
-        for i, (h, k, l, color, thickness, plane) in enumerate(miller_planes):
-            miller_points = get_miller_coordinates(atoms.cell, (h, k, l)).tolist()
-            if plane:
+        for i, plane in enumerate(miller_planes):
+            miller_points = get_miller_coordinates(atoms.cell, plane["index"]).tolist()
+            if plane.get("as_poly", False):
                 el_miller_planes["coordinates"].append(miller_points)
                 el_miller_planes["index"].append(i)
             else:
