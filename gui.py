@@ -2,16 +2,8 @@
 
 The module subclasses ase (v3.18.0) classes, to add additional functionality.
 """
-import importlib
-import json
-import os
-import subprocess
-import sys
-import tempfile
-from time import sleep, time
-from tkinter import Toplevel
+from time import time
 
-from ase import Atoms
 from ase.data import atomic_numbers
 from ase.data import covalent_radii as default_covalent_radii
 from ase.gui import ui
@@ -20,15 +12,9 @@ from ase.gui.images import Images
 from ase.gui.status import Status
 from ase.gui.view import GREEN, PURPLE, View
 import numpy as np
-from pymatgen import Structure
-from pymatgen.io.ase import AseAtomsAdaptor
 
-from aiida_2d.visualize.canvas2svg import create_svg_content
-from aiida_2d.visualize.core import (
-    initialise_element_groups,
-    lighten_hexcolor,
-    VESTA_ELEMENT_INFO,
-)
+from aiida_2d.visualize.color import Color
+from aiida_2d.visualize.core import initialise_element_groups
 
 
 def get_default_settings(overrides=None):
@@ -120,8 +106,7 @@ class AtomGui(GUI):
         rotations : str
             string format of unit cell rotations '50x,-10y,120z' (note: order matters)
         element_colors: list[tuple]
-            (r, g, b) colour for each atomic number (0.0 <= value <= 1.0),
-            defaults to 'jmol' scheme
+            hex colour for each atomic number (defaults to 'jmol' scheme)
         label_sites: int
             0=None, 1=index, 2=magmoms, 3=symbols, 4=charges (see ``View.update_labels``)
         ghost_settings: dict or None
@@ -140,10 +125,6 @@ class AtomGui(GUI):
 
         self.config = get_default_settings(config_settings)
         self.ghost_settings = get_ghost_settings(ghost_settings)
-
-        assert all(
-            len(v) == 6 for v in miller_planes
-        ), "miller planes must be (h, k, l, colour, thickness, plane)"
         self._miller_planes = miller_planes
 
         menu = self.get_menu_data()
@@ -163,10 +144,7 @@ class AtomGui(GUI):
 
         View.__init__(self, rotations)
         if element_colors:
-            for i, rgb in enumerate(element_colors):
-                self.colors[i] = "#{0:02X}{1:02X}{2:02X}".format(
-                    *(int(x * 255) for x in rgb)
-                )
+            self.colors = dict(enumerate(element_colors))
         Status.__init__(self)
 
         self.subprocesses = []  # list of external processes
@@ -208,11 +186,11 @@ class AtomGui(GUI):
 
     def get_miller_color(self, index):
         """Return colour of miller plane."""
-        return self._miller_planes[index][3]
+        return self._miller_planes[index].get("color", "blue")
 
     def get_miller_thickness(self, index):
         """Return thickness of miller plane lines."""
-        return self._miller_planes[index][4]
+        return self._miller_planes[index].get("stroke_width", "blue")
 
     def set_atoms(self, atoms):
         """Set the atoms, unit cell(s) and bonds to draw.
@@ -270,9 +248,14 @@ class AtomGui(GUI):
         circle = self.circle
         arc = self.window.arc
 
-        atom_color = lighten_hexcolor(
-            color, fraction=self.ghost_settings["lighten"] if ghost else 0.0
-        )
+        if ghost:
+            atom_color = Color(color)
+            atom_color.luminance += (1 - atom_color.luminance) * self.ghost_settings[
+                "lighten"
+            ]
+            atom_color = atom_color.web
+        else:
+            atom_color = color
 
         if "occupancy" in self.atoms.info:
             site_occ = self.atoms.info["occupancy"][tag]
@@ -626,316 +609,3 @@ class AtomGui(GUI):
 
         if status:
             self.status(self.atoms)
-
-
-def view_atoms(
-    atoms,
-    repeat=(1, 1, 1),
-    center=False,
-    config_settings=None,
-    show_unit_repeats=False,
-    rotations="",
-    like_vesta=True,
-    label_sites=0,
-    ghost_settings=None,
-    miller_planes=(),
-    run=True,
-    bring_to_top=True,
-):
-    """Launch a (blocking) GUI to view ``ase.Atoms`` or ``pymatgen.Structure``.
-
-    Parameters
-    ----------
-    repeat: int or tuple
-        repeat unit cell
-    center: bool
-        Center atoms in unit cell
-    config_settings: dict or None
-        overrid default GUI setting, e.g. {"show_axes": False}
-    show_unit_repeats: bool
-        if True, show each repeat unit cell
-    rotations : str
-        string format of unit cell rotations '50x,-10y,120z' (note: order matters)
-    like_vesta: bool
-        use same default atomic radii and colors as Vesta
-    label_sites: int
-        0=None, 1=index, 2=magmoms, 3=symbols, 4=charges (see ``View.update_labels``)
-    display_ghosts: tuple
-        how to display atoms labeled as ghosts: (lighten fraction, add cross)
-        these are determined if atoms.arrays["ghost"] is set
-    miller_planes: list[tuple]
-        list of (h, k, l, colour, thickness, as_poly) to project onto the unit cell,
-        e.g. [(1, 0, 0, "blue", 1, True), (2, 2, 2, "green", 3.5, False)].
-    run: bool
-        If False return gui, without running
-    bring_to_top: bool
-        bring the canvas window to the top
-
-    """
-    config_settings = get_default_settings(config_settings)
-    assert label_sites in [0, 1, 2, 3, 4]
-    if isinstance(atoms, Structure):
-        structure = atoms
-        atoms = AseAtomsAdaptor.get_atoms(atoms)  # type: Atoms
-        # preserve site properties, by storing them as arrays
-        for key, array in structure.site_properties.items():
-            if key not in atoms.arrays:
-                atoms.set_array(key, np.array(array))
-
-    if center:
-        atoms.center()
-    atoms = atoms.repeat(repeat)
-    if show_unit_repeats:
-        atoms.info["unit_cell_repeat"] = (
-            repeat if isinstance(show_unit_repeats, bool) else show_unit_repeats
-        )
-    images = AtomImages(
-        [atoms],
-        element_radii=[d[1] for d in VESTA_ELEMENT_INFO] if like_vesta else None,
-        radii_scale=config_settings.get("radii_scale"),
-    )
-    gui = AtomGui(
-        images,
-        config_settings=config_settings,
-        rotations=rotations,
-        element_colors=[tuple(d[4:]) for d in VESTA_ELEMENT_INFO]
-        if like_vesta
-        else None,
-        label_sites=label_sites,
-        ghost_settings=ghost_settings,
-        miller_planes=miller_planes,
-    )
-    if bring_to_top:
-        tk_window = gui.window.win  # type: Toplevel
-        tk_window.attributes("-topmost", 1)
-        tk_window.attributes("-topmost", 0)
-
-    if run:
-        gui.run()
-    else:
-        return gui
-
-
-def view_atoms_snapshot(
-    atoms,
-    repeat=(1, 1, 1),
-    center=False,
-    config_settings=None,
-    show_unit_repeats=False,
-    rotations="",
-    like_vesta=True,
-    label_sites=0,
-    ghost_settings=None,
-    miller_planes=(),
-    zoom=1,
-    resize_canvas=None,
-    out_format="pil",
-    scale_image=4,
-    image_size=(500, 500),
-    atom_opacity=0.95,
-    bond_opacity=0.8,
-    miller_opacity=0.5,
-):
-    """Create an image, from a snapshot of the ``ase.Atoms`` or ``pymatgen.Structure`` GUI canvas.
-
-    Parameters
-    ----------
-    repeat: int or tuple
-        repeat unit cell
-    center: bool
-        Center atoms in unit cell
-    config_settings: dict or None
-        overrid default GUI setting, e.g. {"show_axes": False}
-    show_unit_repeats: bool
-        if True, show each repeat unit cell
-    rotations : str
-        string format of unit cell rotations '50x,-10y,120z' (note: order matters)
-    like_vesta: bool
-        use same default atomic radii and colors as Vesta
-    label_sites: int
-        0=None, 1=index, 2=magmoms, 3=symbols, 4=charges (see ``View.update_labels``)
-    ghost_settings: dict or None
-        how to display atoms labelled as ghosts: (overrides fro defaults)
-        these are determined if atoms.arrays["ghost"] is set
-    miller_planes: list[tuple]
-        list of (h, k, l, colour, thickness, as_poly) to project onto the unit cell,
-        e.g. [(1, 0, 0, "blue", 1, True), (2, 2, 2, "green", 3.5, False)].
-    zoom: float
-        fraction to rescale the image by
-    resize_canvas: tuple or None
-        (width, height) dimensions to set before screenshotting (default is (450, 450))
-    out_format: str
-        how to return the screenshot:
-        'svg_raw': string, 'eps_raw': string
-        'pil': PIL.Image,
-        'svg_ipy': IPython.display.SVG, 'svg_util': svgutils.compose.SVG
-    scale_image: int
-        scale image before rasterizing (used with 'pil')
-    image_size: tuple[int]
-        resize rasterized image (w, h) (used with 'pil')
-    atom_opacity: float
-        opacity of atoms (SVG outputs only)
-    bond_opacity: float
-        opacity of bond lines (SVG outputs only)
-    miller_opacity: float
-        opacity of miller planes (SVG outputs only)
-
-    Returns
-    -------
-    image : PIL.Image or IPython.display.SVG or str
-
-    """
-    assert out_format in [
-        "pil",
-        "svg_raw",
-        "svg_ipy",
-        "svg_util",
-        "eps_raw",
-    ], f"{out_format} not a recognized out_format"
-    ghost_settings = get_ghost_settings(ghost_settings)
-    gui = view_atoms(
-        atoms,
-        repeat=repeat,
-        center=center,
-        config_settings=config_settings,
-        show_unit_repeats=show_unit_repeats,
-        rotations=rotations,
-        like_vesta=like_vesta,
-        label_sites=label_sites,
-        ghost_settings=ghost_settings,
-        miller_planes=miller_planes,
-        run=False,
-        bring_to_top=False,
-    )
-    gui.window.win.withdraw()  # hide window
-    canvas = gui.window.canvas
-    if resize_canvas:
-        canvas.config(width=resize_canvas[0], height=resize_canvas[1])
-    if zoom != 1:
-        gui.scale *= zoom
-    if resize_canvas or zoom:
-        gui.draw()
-
-    try:
-        if out_format in ["svg_raw", "svg_ipy", "svg_util"]:
-            image = create_svg_content(
-                canvas,
-                tag_funcs={
-                    "atom-circle": lambda itemtype, options, style: style.update(
-                        {"fill-opacity": str(atom_opacity)}
-                    ),
-                    "atom-ghost": lambda itemtype, options, style: style.update(
-                        {
-                            "fill-opacity": str(ghost_settings["opacity"]),
-                            "stroke-width": f"{ghost_settings['linewidth']}px",
-                        }
-                    ),
-                    "bond-line": lambda itemtype, options, style: style.update(
-                        {"stroke-opacity": str(bond_opacity), "stroke-linecap": "round"}
-                    ),
-                    "miller-plane": lambda itemtype, options, style: style.update(
-                        {"fill-opacity": str(miller_opacity)}
-                    ),
-                },
-            )
-            if out_format == "svg_ipy":
-                from IPython.display import SVG
-
-                image = SVG(image)
-            elif out_format == "svg_util":
-                from svgutils.transform import fromstring
-
-                image = fromstring(image)
-        else:
-            df, fname = tempfile.mkstemp()
-            try:
-                canvas.postscript(file=fname)
-                if out_format == "pil":
-                    from PIL import Image
-
-                    image = Image.open(fname)
-                    image.load(scale=scale_image)
-                    image.thumbnail(image_size, Image.ANTIALIAS)
-                else:
-                    with open(fname) as handle:
-                        image = handle.read()
-            finally:
-                if os.path.exists(fname):
-                    os.remove(fname)
-    finally:
-        gui.exit()
-    return image
-
-
-def view_atoms_subprocess(
-    atoms,
-    repeat=(1, 1, 1),
-    center=False,
-    config_settings=None,
-    show_unit_repeats=False,
-    rotations="",
-    like_vesta=True,
-    label_sites=0,
-    test_init=2,
-):
-    """Launch a GUI to view ``ase.Atoms`` or ``pymatgen.Structure``, in a (non-blocking) subprocess.
-
-    We encode all the data into a json object, then parse this to a console executable via stdin.
-
-    Parameters
-    ----------
-    repeat: int or tuple
-        repeat unit cell
-    center: bool
-        Center atoms in unit cell
-    config_settings: dict or None
-        overrid default GUI setting, e.g. {"show_axes": False}
-    show_unit_repeats: bool
-        if True, show each repeat unit cell
-    rotations : str
-        string format of unit cell rotations '50x,-10y,120z' (note: order matters)
-    like_vesta: bool
-        use same default atomic radii and colors as Vesta
-    test_init: int or float
-        wait for a x seconds, then test whether the process initialized without error
-
-    """
-    assert label_sites in [0, 1, 2, 3, 4]
-    if not isinstance(atoms, Structure):
-        atoms = AseAtomsAdaptor.get_structure(atoms)
-    data = atoms.as_dict()
-    data["view_kwargs"] = {
-        "repeat": repeat,
-        "center": center,
-        "config_settings": config_settings,
-        "show_unit_repeats": show_unit_repeats,
-        "rotations": rotations,
-        "like_vesta": like_vesta,
-        "label_sites": label_sites,
-    }
-    data_str = json.dumps(data)
-    process = subprocess.Popen(
-        "aiida-2d.view_atoms", stdin=subprocess.PIPE, stderr=subprocess.PIPE
-    )
-    process.stdin.write(data_str.encode())
-    process.stdin.close()
-    sleep(test_init)
-    if process.poll():
-        raise RuntimeError(process.stderr.read().decode())
-    return process
-
-
-def _view_atoms_exec():
-    """Launch a GUI, with json data parsed from stdin."""
-    if sys.stdin.isatty():
-        raise IOError("stdin is empty")
-    data_str = sys.stdin.read()
-    data = json.loads(data_str)
-    view_kwargs = data.pop("view_kwargs", {})
-
-    module = importlib.import_module(data["@module"])
-    klass = getattr(module, data["@class"])
-    structure = klass.from_dict(
-        {k: v for k, v in data.items() if not k.startswith("@")}
-    )
-    view_atoms(structure, **view_kwargs)

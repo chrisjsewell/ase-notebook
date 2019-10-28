@@ -1,22 +1,28 @@
 """A module for creating an SVG visualisation of a structure."""
+import importlib
 import inspect
+import json
+import subprocess
+import sys
+from time import sleep
 from typing import Union
 
+import ase
 from ase.data import covalent_radii as ase_covalent_radii
 from ase.data.colors import jmol_colors as ase_element_colors
 import attr
 from attr.validators import in_, instance_of
 import jsonschema
 import numpy as np
-from pymatgen import Structure
-from pymatgen.io.ase import AseAtomsAdaptor
 from svgwrite import Drawing, shapes, text
 
+from aiida_2d.visualize.color import Color
 from aiida_2d.visualize.core import (
     initialise_element_groups,
     rotate,
     VESTA_ELEMENT_INFO,
 )
+from aiida_2d.visualize.gui import AtomGui, AtomImages
 
 
 def compute_projection(element_group, wsize, rotation, whitespace=1.3):
@@ -35,7 +41,7 @@ def compute_projection(element_group, wsize, rotation, whitespace=1.3):
     return center, scale
 
 
-def generate_svg_elements(element_group, scale, atom_radii):
+def generate_svg_elements(element_group, scale):
     """Create the SVG elements, related to the 3D objects."""
     svg_elements = []
 
@@ -164,6 +170,22 @@ def is_positive_number(self, attribute, value):
         )
 
 
+def is_html_color(self, attribute, value):
+    """Validate that an attribute value is a valid HTML color."""
+    try:
+        if not isinstance(value, str):
+            raise TypeError
+        Color(value)
+    except Exception:
+        raise TypeError(
+            f"'{attribute.name}' must be a valid hex color (got {value!r} that is a "
+            f"{value.__class__!r}).",
+            attribute,
+            str,
+            value,
+        )
+
+
 MILLER_SCHEMA = {
     "$schema": "http://json-schema.org/draft-07/schema",
     "type": "array",
@@ -179,7 +201,7 @@ MILLER_SCHEMA = {
             },
             "as_poly": {"type": "boolean"},
             "stroke_width": {"type": "number", "minimum": 0},
-            "color": {"type": ["string", "array"]},
+            "color": {"type": "string"},
         },
     },
 }
@@ -211,6 +233,7 @@ class ViewConfig:
     )
     atom_opacity: float = attr.ib(default=0.95, validator=is_positive_number)
     ghost_stroke_width: float = attr.ib(default=0.0, validator=is_positive_number)
+    ghost_lighten: float = attr.ib(default=0.0, validator=is_positive_number)
     ghost_opacity: float = attr.ib(default=0.4, validator=is_positive_number)
     ghost_show_label: bool = attr.ib(default=False, validator=instance_of(bool))
     show_uc: bool = attr.ib(default=True, validator=instance_of(bool))
@@ -232,6 +255,8 @@ class ViewConfig:
     canvas_size: Union[list, tuple] = attr.ib(
         default=(400, 400), validator=instance_of((list, tuple))
     )
+    canvas_color_foreground: str = attr.ib(default="#000000", validator=is_html_color)
+    canvas_color_background: str = attr.ib(default="#ffffff", validator=is_html_color)
     zoom: float = attr.ib(default=1.0, validator=is_positive_number)
     crop_fraction: Union[list, tuple] = attr.ib(
         default=(1.0, 1.0), validator=instance_of((list, tuple))
@@ -244,6 +269,9 @@ class ViewConfig:
             jsonschema.validate(value, MILLER_SCHEMA)
         except jsonschema.ValidationError as err:
             raise TypeError(f"'{attribute.name}' failed validation.") from err
+        for plane in value:
+            if "color" in plane:
+                is_html_color(self, attribute, plane["color"])
 
     def __setattr__(self, key, value):
         """Add attr validation when setting attributes."""
@@ -256,9 +284,12 @@ class ViewConfig:
 class AseView:
     """Class for visualising ``ase.Atoms`` or ``pymatgen.Structure``."""
 
-    def __init__(self, **kwargs):
+    def __init__(self, config=None, **kwargs):
         """This is replaced by ``SVGConfig`` docstring."""  # noqa: D401
-        self._config = ViewConfig(**kwargs)
+        if config is not None:
+            self._config = config
+        else:
+            self._config = ViewConfig(**kwargs)
 
     @property
     def config(self):
@@ -378,17 +409,38 @@ class AseView:
         # TODO could also label by array atoms.get_array(self.config.atom_label_by)
         raise ValueError(self.config.atom_label_by)
 
-    def make_svg(self, atoms, center_in_uc=False, repeat_uc=(1, 1, 1)):
-        """Create an SVG of the atoms or structure."""
-        config = self._config
+    def _convert_atoms(self, atoms, to_structure=False):
+        """Convert ``pymatgen.Structure`` to/from ``ase.Atoms``.
 
-        if isinstance(atoms, Structure):
+        We preserve site properties, by storing them as arrays.
+        """
+        if isinstance(atoms, ase.Atoms) and not to_structure:
+            return atoms
+
+        from pymatgen import Structure
+        from pymatgen.io.ase import AseAtomsAdaptor
+
+        if isinstance(atoms, ase.Atoms) and to_structure:
+            return AseAtomsAdaptor.get_structure(atoms)
+
+        if isinstance(atoms, Structure) and not to_structure:
             structure = atoms
             atoms = AseAtomsAdaptor.get_atoms(atoms)
-            # preserve site properties, by storing them as arrays
             for key, array in structure.site_properties.items():
                 if key not in atoms.arrays:
                     atoms.set_array(key, np.array(array))
+            return atoms
+
+        if isinstance(atoms, Structure) and to_structure:
+            return atoms
+
+        raise TypeError(f"atoms class not recognised: {atoms.__class__}")
+
+    def _prepare_elements(self, atoms, center_in_uc=False, repeat_uc=(1, 1, 1)):
+        """Prepare visualisation elements, in a backend agnostic manner."""
+        config = self._config
+
+        atoms = self._convert_atoms(atoms)
 
         if center_in_uc:
             atoms.center()
@@ -489,7 +541,16 @@ class AseView:
                 element=False,
             )
 
-        svg_elements = generate_svg_elements(element_groups, scale, atom_radii)
+        return atoms, element_groups, rotation_matrix, scale
+
+    def make_svg(self, atoms, center_in_uc=False, repeat_uc=(1, 1, 1)):
+        """Create an SVG of the atoms or structure."""
+        config = self.config
+        atoms, element_groups, rotation_matrix, scale = self._prepare_elements(
+            atoms, center_in_uc=center_in_uc, repeat_uc=repeat_uc
+        )
+        # TODO lighten ghost atoms, if config.ghost_lighten
+        svg_elements = generate_svg_elements(element_groups, scale)
         # TODO cropping should be from all sides
         canvas_size = (np.array(config.canvas_size) * config.crop_fraction).tolist()
         if config.show_axes:
@@ -501,13 +562,141 @@ class AseView:
                     font_size=config.axes_font_size,
                 )
             )
+        # TODO use config.canvas_color_foreground and config.canvas_color_background
         dwg = Drawing("ase.svg", profile="tiny", size=canvas_size)
         for svg_element in svg_elements:
             dwg.add(svg_element)
         return dwg
+
+    def make_gui(
+        self,
+        atoms,
+        center_in_uc=False,
+        repeat_uc=(1, 1, 1),
+        bring_to_top=True,
+        launch=True,
+    ):
+        """Launch a (blocking) GUI to view the atoms or structure."""
+        config = self.config
+
+        atoms, element_groups, rotation_matrix, scale = self._prepare_elements(
+            atoms, center_in_uc=center_in_uc, repeat_uc=repeat_uc
+        )
+
+        images = AtomImages(
+            [atoms],
+            element_radii=np.array(self.get_element_radii()).tolist(),
+            radii_scale=config.radii_scale,
+        )
+
+        label_sites = {"index": 1, "magmom": 2, "element": 3, "charge": 4}.get(
+            config.atom_label_by, 0
+        )
+        if not config.atom_show_label:
+            label_sites = 0
+        config_settings = {
+            "gui_foreground_color": config.canvas_color_foreground,
+            "gui_background_color": config.canvas_color_background,
+            "radii_scale": config.radii_scale,
+            "force_vector_scale": 1.0,
+            "velocity_vector_scale": 1.0,
+            "show_unit_cell": config.show_uc,
+            "unit_cell_segmentation": config.uc_segments,
+            "show_axes": config.show_axes,
+            "show_bonds": config.show_bonds,
+            "show_millers": config.show_miller_planes,
+            "swap_mouse": False,
+        }
+        ghost_settings = {
+            "display": True,
+            "cross": False,
+            "label": config.ghost_show_label,
+            "lighten": config.ghost_lighten,
+            "opacity": config.ghost_opacity,
+            "linewidth": config.ghost_stroke_width,
+        }
+
+        gui = AtomGui(
+            images,
+            config_settings=config_settings,
+            rotations=config.rotations,
+            element_colors=self.get_element_colors(),
+            label_sites=label_sites,
+            ghost_settings=ghost_settings,
+            miller_planes=config.miller_planes,
+        )
+        if bring_to_top:
+            tk_window = gui.window.win  # tkinter.Toplevel
+            tk_window.attributes("-topmost", 1)
+            tk_window.attributes("-topmost", 0)
+        if launch:
+            gui.run()
+        else:
+            return gui
+
+    def launch_gui_subprocess(
+        self, atoms, center_in_uc=False, repeat_uc=(1, 1, 1), test_init=2
+    ):
+        """Launch a GUI to view the atoms or structure, in a (non-blocking) subprocess.
+
+        We encode all the data into a json object,
+        then parse this to a console executable via stdin.
+
+        :param test_init: wait for a x seconds, then test whether the process initialized without error.
+
+        """
+        structure = self._convert_atoms(atoms, to_structure=True)
+        struct_data = structure.as_dict()
+        config_data = self.get_config_as_dict()
+        data_str = json.dumps(
+            {
+                "structure": struct_data,
+                "config": config_data,
+                "kwargs": {"center_in_uc": center_in_uc, "repeat_uc": repeat_uc},
+            }
+        )
+        process = subprocess.Popen(
+            "aiida-2d.view_atoms", stdin=subprocess.PIPE, stderr=subprocess.PIPE
+        )
+        process.stdin.write(data_str.encode())
+        process.stdin.close()
+        sleep(test_init)
+        if process.poll():
+            raise RuntimeError(process.stderr.read().decode())
+        return process
 
 
 AseView.__init__.__doc__ = (
     "kwargs are used to initialise SVGConfig:"
     f"\n{inspect.signature(ViewConfig.__init__)}"
 )
+
+
+def _launch_gui_exec():
+    """Launch a GUI, with json data parsed from stdin."""
+    if sys.stdin.isatty():
+        raise IOError("stdin is empty")
+    data_str = sys.stdin.read()
+    data = json.loads(data_str)
+    structure_dict = data.pop("structure", {})
+    config_dict = data.pop("config", {})
+    kwargs = data.pop("kwargs", {})
+
+    module = importlib.import_module(structure_dict["@module"])
+    klass = getattr(module, structure_dict["@class"])
+    structure = klass.from_dict(
+        {k: v for k, v in structure_dict.items() if not k.startswith("@")}
+    )
+    ase_view = AseView(**config_dict)
+    ase_view.make_gui(structure, **kwargs)
+
+
+# gui.window.win.withdraw()  # hide window
+# canvas = gui.window.canvas
+# canvas.config(width=100, height=100); gui.draw()  # resize canvas
+# gui.scale *= zoom; gui.draw()  # zoom
+# canvas.postscript(file=fname)  # save canvas
+
+
+# from svgutils.transform import fromstring
+# image = fromstring(image)

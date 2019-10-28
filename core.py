@@ -152,17 +152,6 @@ def get_miller_coordinates(cell, miller):
     return np.array(points)
 
 
-def lighten_hexcolor(hex_color, fraction):
-    """Lighten a color (in hex format) by a fraction."""
-    if fraction <= 0:
-        return hex_color
-    hex_color = hex_color.lstrip("#")
-    rgb = np.array([int(hex_color[i : i + 2], 16) for i in (0, 2, 4)])
-    white = np.array([255, 255, 255])
-    rgb = rgb + (white - rgb) * fraction
-    return "#{0:02X}{1:02X}{2:02X}".format(*(int(x * 255) for x in rgb))
-
-
 def compute_bonds(atoms, atom_radii):
     """Compute bonds for atoms."""
     from ase.neighborlist import NeighborList
