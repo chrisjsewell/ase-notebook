@@ -224,21 +224,21 @@ class AtomGui(GUI):
         - compute miller index planes, by points that intercept with the unit cell
 
         """
-        elements, all_coordinates = compute_element_coordinates(
+        elements = compute_element_coordinates(
             atoms,
+            atom_radii=self.get_covalent_radii(),
             show_uc=self.showing_cell(),
             uc_segments=self.config["unit_cell_segmentation"],
             show_bonds=self.showing_bonds(),
             bond_supercell=self.images.repeat,
-            atom_radii=self.get_covalent_radii(),
             miller_planes=self.get_millers() if self.showing_millers() else None,
         )
         self.elements = elements
 
         # record all positions (atoms first) with legacy array name, for use by View.focus
-        self.X = all_coordinates
+        self.X = elements.get_all_coordinates()
         # record atom positions with legacy array name, used by View.move
-        self.X_pos = self.X[: len(atoms.positions)]
+        self.X_pos = self.elements["atoms"]._positions.copy()
 
     def circle(self, color, selected, *bbox, tags=()):
         """Add a circle element.
@@ -372,9 +372,9 @@ class AtomGui(GUI):
         # align elements to axes
         positions = {
             k: (
-                np.dot(v["coordinates"], axes)
-                if v["type"] == "point"
-                else np.einsum("ijk, km -> ijm", v["coordinates"], axes)
+                np.dot(v._coordinates, axes)
+                if v.etype == "sphere"
+                else np.einsum("ijk, km -> ijm", v._coordinates, axes)
             )
             - offset
             for k, v in self.elements.items()
@@ -528,9 +528,7 @@ class AtomGui(GUI):
                 # Draw bond lines, splitting in half, and colouring each half by nearest atom
                 # TODO would be nice if bonds had an outline
                 line_idx = obj_indx - num_atoms - num_cell_lines
-                start_atom, end_atom = self.elements["bond_lines"]["atom_index"][
-                    line_idx
-                ]
+                start_atom, end_atom = self.elements["bond_lines"][line_idx].atom_index
                 self.window.canvas.create_line(
                     (
                         positions["bond_lines"][line_idx, 0, 0],
@@ -586,10 +584,10 @@ class AtomGui(GUI):
                         positions["miller_lines"][miller_indx, 1, 1] + celldisp[1],
                     ),
                     width=self.get_miller_thickness(
-                        self.elements["miller_lines"]["index"][miller_indx]
+                        self.elements["miller_lines"][miller_indx].index
                     ),
                     fill=self.get_miller_color(
-                        self.elements["miller_lines"]["index"][miller_indx]
+                        self.elements["miller_lines"][miller_indx].index
                     ),
                     tags=("miller-line",),
                 )
@@ -602,9 +600,6 @@ class AtomGui(GUI):
                     - num_miller_lines
                 )
                 plane = positions["miller_planes"][miller_indx]
-                if np.isnan(plane[3, 0]):
-                    # it is a triangle, and we can ignore the last point
-                    plane = plane[:3, :]
                 plane_pts = [
                     pt[i] + celldisp[i]
                     for pt in plane.round().astype(int)

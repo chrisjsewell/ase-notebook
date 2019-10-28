@@ -1,8 +1,39 @@
 """Implementation agnostics visualisation functions."""
+from collections import namedtuple, OrderedDict
+from collections.abc import Mapping
 from itertools import product
-from math import ceil
+from math import ceil, cos, radians, sin
+from typing import List
 
 import numpy as np
+
+
+def rotate(rotations, init_rotation=None):
+    """Convert string of format '50x,-10y,120z' to a rotation matrix.
+
+    Note that the order of rotation matters, i.e. '50x,40z' is different
+    from '40z,50x'.
+    """
+    if init_rotation is None:
+        rotation = np.identity(3)
+    else:
+        rotation = init_rotation
+
+    if rotations == "":
+        return rotation
+
+    for i, a in [
+        ("xyz".index(s[-1]), radians(float(s[:-1]))) for s in rotations.split(",")
+    ]:
+        s = sin(a)
+        c = cos(a)
+        if i == 0:
+            rotation = np.dot(rotation, [(1, 0, 0), (0, c, s), (0, -s, c)])
+        elif i == 1:
+            rotation = np.dot(rotation, [(c, 0, -s), (0, 1, 0), (s, 0, c)])
+        else:
+            rotation = np.dot(rotation, [(c, s, 0), (-s, c, 0), (0, 0, 1)])
+    return rotation
 
 
 def get_cell_coordinates(
@@ -161,13 +192,254 @@ def compute_bonds(atoms, atom_radii):
     return bonds
 
 
+class DrawElementsBase:
+    """Abstract base class to store a set of 3D-visualisation elements."""
+
+    etype = None
+
+    def __init__(
+        self, name, coordinates, element_properties=None, group_properties=None
+    ):
+        """Initialise the element group."""
+        self.name = name
+        self._coordinates = coordinates
+        self._positions = coordinates
+        self._axes = np.identity(3)
+        self._offset = np.zeros(3)
+        self._scale = 1
+        self._el_props = element_properties or {}
+        self._grp_props = group_properties or {}
+
+    def __len__(self):
+        """Return the number of elements."""
+        return len(self._coordinates)
+
+    def __getitem__(self, index):
+        """Return a single element."""
+        try:
+            index = int(index)
+        except ValueError:
+            raise TypeError(f"index must be an integer: {index}")
+        element = namedtuple(
+            "Element", ["name", "type", "position"] + list(self._el_props.keys())
+        )
+        return element(
+            self.name,
+            self.etype,
+            self._positions[index],
+            *[v[index] for v in self._el_props.values()],
+        )
+
+    def unstack_coordinates(self):
+        """Return a list of all coordinates in the group."""
+        raise NotImplementedError
+
+    def unstack_positions(self):
+        """Return a list of all coordinates in the group."""
+        raise NotImplementedError
+
+    def update_positions(self, axes, offset, scale):
+        """Update element positions, give a axes basis and centre offset."""
+        raise NotImplementedError
+
+    def get_max_zposition(self):
+        """Return the maximum z-coordinate."""
+        raise NotImplementedError
+
+
+class DrawElementsSphere(DrawElementsBase):
+    """Store a set of 3D-visualisation sphere elements."""
+
+    etype = "sphere"
+
+    def __init__(
+        self, name, coordinates, radii, element_properties=None, group_properties=None
+    ):
+        """Initialise the element group."""
+        coordinates = np.array(coordinates)
+        if coordinates.shape == (0,):
+            coordinates = np.empty((0, 3))
+        super().__init__(name, coordinates, element_properties, group_properties)
+        self._radii = np.array(radii)
+
+    def __getitem__(self, index):
+        """Return a single element."""
+        element = namedtuple(
+            "Element",
+            ["name", "type", "position", "sradius"] + list(self._el_props.keys()),
+        )
+        return element(
+            self.name,
+            self.etype,
+            self._positions[index],
+            self.scaled_radii[index],
+            *[v[index] for v in self._el_props.values()],
+        )
+
+    @property
+    def scaled_radii(self):
+        """Return the scaled radii, for each sphere."""
+        return self._radii * self._scale
+
+    def unstack_coordinates(self):
+        """Return a list of all coordinates in the group."""
+        return self._coordinates
+
+    def unstack_positions(self):
+        """Return a list of all coordinates in the group."""
+        return self._positions
+
+    def update_positions(self, axes, offset, scale):
+        """Update element positions, give a axes basis and centre offset."""
+        self._positions = np.dot(self._coordinates, axes) - offset
+        self._axes = axes
+        self._offset = offset
+        self._scale = scale
+
+    def get_max_zposition(self):
+        """Return the maximum z-coordinate."""
+        return self._positions[:, 2] + self.scaled_radii
+
+
+class DrawElementsLine(DrawElementsBase):
+    """Store a set of 3D-visualisation line elements."""
+
+    etype = "line"
+
+    def __init__(
+        self, name, coordinates, element_properties=None, group_properties=None
+    ):
+        """Initialise the element group."""
+        coordinates = np.array(coordinates)
+        if coordinates.shape == (0,):
+            coordinates = np.empty((0, 2, 3))
+        super().__init__(name, coordinates, element_properties, group_properties)
+
+    def unstack_coordinates(self):
+        """Return a list of all coordinates in the group."""
+        return np.concatenate((self._coordinates[:, 0, :], self._coordinates[:, 1, :]))
+
+    def unstack_positions(self):
+        """Return a list of all coordinates in the group."""
+        return np.concatenate((self._positions[:, 0, :], self._positions[:, 1, :]))
+
+    def update_positions(self, axes, offset, scale):
+        """Update element positions, give a axes basis and centre offset."""
+        self._positions = np.einsum("ijk, km -> ijm", self._coordinates, axes) - offset
+        self._axes = axes
+        self._offset = offset
+        self._scale = scale
+
+    def get_max_zposition(self):
+        """Return the maximum z-coordinate."""
+        return self._positions.max(axis=1)[:, 2]
+
+
+class DrawElementsPoly(DrawElementsBase):
+    """Store a set of 3D-visualisation polygon elements."""
+
+    etype = "poly"
+
+    def unstack_coordinates(self):
+        """Return a list of all coordinates in the group."""
+        planes = [np.array(plane) for plane in self._coordinates]
+        if not planes:
+            return np.empty((0, 3))
+        return np.concatenate(planes)
+
+    def unstack_positions(self):
+        """Return a list of all coordinates in the group."""
+        planes = [np.array(plane) for plane in self._positions]
+        if not planes:
+            return np.empty((0, 3))
+        return np.concatenate(planes)
+
+    def update_positions(self, axes, offset, scale):
+        """Update element positions, give a axes basis and centre offset."""
+        # TODO ideally would apply transform to all planes at once
+        self._positions = [np.dot(plane, axes) - offset for plane in self._coordinates]
+        self._axes = axes
+        self._offset = offset
+        self._scale = scale
+
+    def get_max_zposition(self):
+        """Return the maximum z-coordinate."""
+        return np.array([plane[:, 2].max() for plane in self._positions])
+
+
+class DrawGroup(Mapping):
+    """Store and manipulate 3-D visualisation element groups."""
+
+    def __init__(self, elements: List[DrawElementsBase]):
+        """Store and manipulate 3-D visualisation element groups."""
+        self._elements = OrderedDict([(el.name, el) for el in elements])
+
+    def __getitem__(self, key):
+        """Return an element group by name."""
+        return self._elements[key]
+
+    def __iter__(self):
+        """Iterate over the element group names."""
+        for key in self._elements:
+            yield key
+
+    def __len__(self):
+        """Return the number of element groups."""
+        return len(self._elements)
+
+    def get_all_coordinates(self):
+        """Return a list of all coordinates."""
+        coordinates = [el.unstack_coordinates() for el in self._elements.values()]
+        return np.concatenate(coordinates)
+
+    def get_all_positions(self):
+        """Return a list of all coordinates."""
+        positions = [el.unstack_positions() for el in self._elements.values()]
+        return np.concatenate(positions)
+
+    def update_positions(self, axes=None, offset=None, scale=1):
+        """Update element positions, give a axes basis and centre offset."""
+        if axes is None:
+            axes = np.identity(3)
+        if offset is None:
+            offset = np.zeros(3)
+        for element in self._elements.values():
+            element.update_positions(axes, offset, scale)
+
+    def get_position_range(self):
+        """Return the (minimum, maximum) coordinates."""
+        min_positions = []
+        max_positions = []
+        for element in self._elements.values():
+            positions = element.unstack_positions()
+            if isinstance(element, DrawElementsSphere):  # type: DrawElementsSphere
+                # TODO make more general
+                min_positions.append(positions - element.scaled_radii[:, None])
+                max_positions.append(positions + element.scaled_radii[:, None])
+            else:
+                min_positions.append(positions)
+                max_positions.append(positions)
+        return (
+            np.concatenate(min_positions).min(0),
+            np.concatenate(max_positions).max(0),
+        )
+
+    def yield_zorder(self):
+        """Yield elements, in order of the z-coordinate."""
+        keys = [(el.name, i) for el in self._elements.values() for i in range(len(el))]
+        for i in np.concatenate(
+            [el.get_max_zposition() for el in self._elements.values()]
+        ).argsort():
+            yield self[keys[i][0]][keys[i][1]]
+
+
 def compute_element_coordinates(
     atoms,
+    atom_radii,
     show_uc=True,
     uc_segments=None,
     show_bonds=False,
     bond_supercell=(1, 1, 1),
-    atom_radii=None,
     miller_planes=None,
 ):
     """Compute (untransformed) coordinates, for elements in the visualisation.
@@ -175,6 +447,8 @@ def compute_element_coordinates(
     Parameters
     ----------
     atoms : ase.Atoms
+    atom_radii : list or None
+        mapping of atom index to atomic radii
     show_uc : bool
         show the unit cell
     uc_segments : float or None
@@ -183,8 +457,6 @@ def compute_element_coordinates(
         show the atomic bonds
     bond_supercell : tuple
         the supercell of unit cell used for computing bonds
-    atom_radii : list or None
-        mapping of atom index to atomic radii, used for computing bonds
     miller_planes: list[tuple] or None
         list of (h, k, l, colour, thickness, as_poly) to project onto the unit cell,
         e.g. [(1, 0, 0, "blue", 1, True), (2, 2, 2, "green", 3.5, False)].
@@ -195,11 +467,6 @@ def compute_element_coordinates(
     all_coordinates: numpy.array
 
     """
-    if show_bonds and atom_radii is None:
-        raise ValueError("must supply atom_radii, if computing bonds")
-
-    el_atoms = {"coordinates": atoms.positions, "type": "point"}
-
     if show_uc:
         cvec_starts, cvec_ends = get_cell_coordinates(
             atoms.cell,
@@ -209,26 +476,17 @@ def compute_element_coordinates(
     else:
         cvec_starts = cvec_ends = np.zeros((0, 3))
 
-    el_cell_lines = {
-        "coordinates": np.stack((cvec_starts, cvec_ends), axis=1),
-        "type": "line",
-    }
+    el_cell_lines = {"coordinates": np.stack((cvec_starts, cvec_ends), axis=1)}
 
-    el_miller_lines = {"starts": [], "ends": [], "index": [], "type": "line"}
-    el_miller_planes = {"coordinates": [], "index": [], "type": "plane"}
-    all_miller_points = []
+    el_miller_lines = {"starts": [], "ends": [], "index": []}
+    el_miller_planes = {"coordinates": [], "index": []}
 
     if miller_planes is not None:
 
         for i, (h, k, l, color, thickness, plane) in enumerate(miller_planes):
             miller_points = get_miller_coordinates(atoms.cell, (h, k, l)).tolist()
-            all_miller_points.extend(miller_points)
             if plane:
-                el_miller_planes["coordinates"].append(
-                    miller_points
-                    if len(miller_points) == 4
-                    else miller_points + [[np.nan, np.nan, np.nan]]
-                )
+                el_miller_planes["coordinates"].append(miller_points)
                 el_miller_planes["index"].append(i)
             else:
                 el_miller_lines["starts"].extend(miller_points)
@@ -273,43 +531,27 @@ def compute_element_coordinates(
 
     el_bond_lines = {
         "coordinates": np.stack((bond_starts, bond_ends), axis=1),
-        "type": "line",
         "atom_index": bond_atom_indices,
     }
 
-    all_coordinates = np.concatenate(
-        (
-            atoms.positions[:],
-            cvec_starts,
-            cvec_ends,
-            all_miller_points or np.empty((0, 3)),
-            bond_starts,
-            bond_ends,
-        )
-    )
-
-    return (
-        {
-            "atoms": el_atoms,
-            "cell_lines": el_cell_lines,
-            "bond_lines": el_bond_lines,
-            "miller_lines": el_miller_lines,
-            "miller_planes": el_miller_planes,
-        },
-        all_coordinates,
-    )
-
-
-if __name__ == "__main__":
-    _self = None
-    atoms = None
-    compute_element_coordinates(
-        atoms,
-        show_uc=_self.showing_cell(),
-        uc_segments=_self.config["unit_cell_segmentation"],
-        show_bonds=_self.showing_bonds(),
-        bond_supercell=_self.images.repeat,
-        element_colors=_self.colors,
-        atom_radii=_self.get_covalent_radii(),
-        miller_planes=_self.get_millers() if _self.showing_millers() else None,
+    return DrawGroup(
+        [
+            DrawElementsSphere("atoms", atoms.positions[:], atom_radii),
+            DrawElementsLine("cell_lines", el_cell_lines["coordinates"]),
+            DrawElementsLine(
+                "bond_lines",
+                el_bond_lines["coordinates"],
+                element_properties={"atom_index": el_bond_lines["atom_index"]},
+            ),
+            DrawElementsLine(
+                "miller_lines",
+                el_miller_lines["coordinates"],
+                element_properties={"index": el_miller_lines["index"]},
+            ),
+            DrawElementsPoly(
+                "miller_planes",
+                el_miller_planes["coordinates"],
+                element_properties={"index": el_miller_planes["index"]},
+            ),
+        ]
     )
