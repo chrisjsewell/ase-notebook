@@ -8,6 +8,22 @@ from typing import List
 import numpy as np
 
 
+def compute_projection(element_group, wsize, rotation, whitespace=1.3):
+    """Compute the center and scale of the projection."""
+    element_group.update_positions(rotation)
+    min_coord, max_coord = element_group.get_position_range()
+    center = np.dot(rotation, (min_coord + max_coord) / 2)
+    s = whitespace * (max_coord - min_coord)
+    width, height = wsize
+    if s[0] * height < s[1] * width:
+        scale = height / s[1]
+    elif s[0] > 0.0001:
+        scale = width / s[0]
+    else:
+        scale = 1.0
+    return center, scale
+
+
 def rotate(rotations, init_rotation=None):
     """Convert string of format '50x,-10y,120z' to a rotation matrix.
 
