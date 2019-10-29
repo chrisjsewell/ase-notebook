@@ -4,6 +4,7 @@ The module subclasses ase (v3.18.0) classes, to add additional functionality.
 """
 from time import time
 import tkinter
+from tkinter.font import Font
 
 from ase.data import atomic_numbers
 from ase.data import covalent_radii as default_covalent_radii
@@ -20,6 +21,7 @@ from aiida_2d.visualize.core import initialise_element_groups
 
 def get_default_settings(overrides=None):
     """Return the default setting for the GUI."""
+    # TODO eventually this should be repplaced by the ViewConfig
     # values commented out are never actually utilised in the code
     dct = {
         # "gui_graphs_string": "i, e - E[-1]",  # default for the graph command
@@ -37,21 +39,18 @@ def get_default_settings(overrides=None):
         # "shift_cell": False,
         "swap_mouse": False,
         "atom_lighten_by_depth": 0.0,
-    }
-    if overrides:
-        dct.update(overrides)
-    return dct
-
-
-def get_ghost_settings(overrides=None):
-    """Return the default setting for ghost atoms."""
-    dct = {
-        "display": True,
-        "cross": False,
-        "label": False,
-        "lighten": 0.0,
-        "opacity": 0.4,
-        "linewidth": 0,
+        "atom_stroke_width": 1,
+        "uc_color": "black",
+        "ghost_display": True,
+        "ghost_cross": False,
+        "ghost_label": False,
+        "ghost_lighten": 0.0,
+        "ghost_stroke_width": 0,
+        "ghost_opacity": 0.4,
+        # TODO a number of the ghost options aren't actually utilised
+        "axes_length": 15,
+        "axes_font_size": 14,
+        "axes_line_color": "black",
     }
     if overrides:
         dct.update(overrides)
@@ -94,7 +93,6 @@ class AtomGui(GUI):
         rotations="",
         element_colors=None,
         label_sites=0,
-        ghost_settings=None,
         miller_planes=(),
     ):
         """Initialise the GUI.
@@ -111,9 +109,6 @@ class AtomGui(GUI):
             hex colour for each atomic number (defaults to 'jmol' scheme)
         label_sites: int
             0=None, 1=index, 2=magmoms, 3=symbols, 4=charges (see ``View.update_labels``)
-        ghost_settings: dict or None
-            How to display atoms labelled as ghosts (overrides for default settings).
-            Ghost atoms are determined if atoms.arrays["ghost"] is set
         miller_planes: list[tuple]
             list of (h, k, l, colour, thickness, as_poly) to project onto the unit cell,
             e.g. [(1, 0, 0, "blue", 1, True), (2, 2, 2, "green", 3.5, False)].
@@ -126,7 +121,6 @@ class AtomGui(GUI):
         self.observers = []
 
         self.config = get_default_settings(config_settings)
-        self.ghost_settings = get_ghost_settings(ghost_settings)
         self._miller_planes = miller_planes
 
         menu = self.get_menu_data()
@@ -295,7 +289,7 @@ class AtomGui(GUI):
                 .astype(int),
                 "color": atom_colors,
                 "label": [
-                    None if g and not self.ghost_settings["label"] else l
+                    None if g and not self.config["ghost_label"] else l
                     for l, g in zip(
                         self.labels or [None for _ in ghost_atoms], ghost_atoms
                     )
@@ -314,12 +308,17 @@ class AtomGui(GUI):
                     else None
                     for t in self.atoms.get_tags()
                 ],
-                # "stroke_width": [
-                #     config.ghost_stroke_width if g else config.atom_stroke_width
-                #     for g in ghost_atoms
-                # ],  # TODO add atom stroke width
+                "stroke_width": [
+                    self.config["ghost_stroke_width"]
+                    if g
+                    else self.config["atom_stroke_width"]
+                    for g in ghost_atoms
+                ],
             },
             element=True,
+        )
+        element_groups["cell_lines"].set_property_many(
+            {"color": self.config["uc_color"]}, element=False
         )
         element_groups["bond_lines"].set_property(
             "color",
@@ -363,12 +362,18 @@ class AtomGui(GUI):
             movecolor=movecolor,
             scale=self.scale,
             element_colors=self.colors,
-            ghost_cross=self.ghost_settings["cross"],
+            ghost_cross=self.config["ghost_cross"],
         )
-        self.window.line
 
         if self.window["toggle-show-axes"]:
-            self.draw_axes()
+            draw_axes(
+                self.window.canvas,
+                self.axes,
+                self.window.size,
+                length=self.config["axes_length"],
+                font_size=self.config["axes_font_size"],
+                line_color=self.config["axes_line_color"],
+            )
 
         if len(self.images) > 1:
             self.draw_frame_number()
@@ -398,14 +403,14 @@ def draw_arrow(canvas, coords, width, scale):
     canvas.create_line(x2, y2, int(end[0]), int(end[1]), width)
 
 
-def draw_circle(canvas, color, selected, *bbox, tags=()):
+def draw_circle(canvas, color, selected, bbox, tags=(), stroke_width=1):
     """Draw a circle element."""
     if selected:
         outline = "#004500"
-        width = 3
+        width = stroke_width * 3
     else:
         outline = "black"
-        width = 1
+        width = stroke_width
     canvas.create_oval(
         *tuple(int(x) for x in bbox),
         fill=color,
@@ -431,6 +436,36 @@ def draw_arc(canvas, color, selected, start, extent, *bbox):
         outline=outline,
         width=width,
     )
+
+
+def draw_axes(
+    canvas,
+    axes,
+    window_size,
+    *,
+    length=15,
+    line_color="black",
+    line_width=1,
+    font_size=14,
+):
+    """Draw the axes element."""
+    rgb = ["red", "green", "blue"]
+
+    for i in axes[:, 2].argsort():
+        a = 20
+        b = window_size[1] - 20
+        c = int(axes[i][0] * length + a)
+        d = int(-axes[i][1] * length + b)
+        canvas.create_line(
+            *tuple(int(x) for x in (a, b, c, d)), width=line_width, fill=line_color
+        )
+        canvas.create_text(
+            (c, d),
+            text="XYZ"[i],
+            fill=rgb[i],
+            font=Font(size=20),
+            anchor=tkinter.CENTER,
+        )
 
 
 def draw_elements(
@@ -477,10 +512,13 @@ def draw_elements(
                         canvas,
                         fill,
                         element.selected,
-                        element.lbound[0],
-                        element.lbound[1],
-                        element.lbound[0] + diameter,
-                        element.lbound[1] + diameter,
+                        (
+                            element.lbound[0],
+                            element.lbound[1],
+                            element.lbound[0] + diameter,
+                            element.lbound[1] + diameter,
+                        ),
+                        stroke_width=element.stroke_width,
                     )
                 start = 0
                 # start with the dominant species
@@ -492,10 +530,13 @@ def draw_elements(
                             canvas,
                             element.color,
                             element.selected,
-                            element.lbound[0],
-                            element.lbound[1],
-                            element.lbound[0] + diameter,
-                            element.lbound[1] + diameter,
+                            (
+                                element.lbound[0],
+                                element.lbound[1],
+                                element.lbound[0] + diameter,
+                                element.lbound[1] + diameter,
+                            ),
+                            stroke_width=element.stroke_width,
                             tags=("atom-circle",),
                         )
                     else:
@@ -519,19 +560,24 @@ def draw_elements(
                         canvas,
                         movecolor,
                         False,
-                        element.lbound[0] - 4,
-                        element.lbound[1] - 4,
-                        element.lbound[0] + diameter + 4,
-                        element.lbound[1] + diameter + 4,
+                        (
+                            element.lbound[0] - 4,
+                            element.lbound[1] - 4,
+                            element.lbound[0] + diameter + 4,
+                            element.lbound[1] + diameter + 4,
+                        ),
                     )
                 draw_circle(
                     canvas,
                     element.color,
                     element.selected,
-                    element.lbound[0],
-                    element.lbound[1],
-                    element.lbound[0] + diameter,
-                    element.lbound[1] + diameter,
+                    (
+                        element.lbound[0],
+                        element.lbound[1],
+                        element.lbound[0] + diameter,
+                        element.lbound[1] + diameter,
+                    ),
+                    stroke_width=element.stroke_width,
                     tags=("atom-circle",),
                 )
 
@@ -589,7 +635,7 @@ def draw_elements(
                     element.position[1, 0] + celldisp[0],
                     element.position[1, 1] + celldisp[1],
                 ),
-                # TODO implement color
+                fill=element.color,
                 width=1,
                 dash=(6, 4),  # dash pattern = (line length, gap length, ..)
                 tags=("cell-line",),

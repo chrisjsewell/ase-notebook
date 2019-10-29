@@ -506,8 +506,8 @@ class AseView:
         )
         if not config.atom_show_label:
             label_sites = 0
-        # TODO config.uc_color, config.axes_line_color
 
+        # TODO eventually just parse the config
         config_settings = {
             "gui_foreground_color": config.canvas_color_foreground,
             "gui_background_color": config.canvas_color_background,
@@ -520,15 +520,18 @@ class AseView:
             "show_bonds": config.show_bonds,
             "show_millers": config.show_miller_planes,
             "swap_mouse": False,
+            "atom_stroke_width": config.atom_stroke_width,
             "atom_lighten_by_depth": config.atom_lighten_by_depth,
-        }
-        ghost_settings = {
-            "display": True,
-            "cross": False,  # TODO make option
-            "label": config.ghost_show_label,
-            "lighten": config.ghost_lighten,
-            "opacity": config.ghost_opacity,
-            "linewidth": config.ghost_stroke_width,
+            "uc_color": config.uc_color,
+            "ghost_display": True,
+            "ghost_cross": False,  # TODO make option
+            "ghost_label": config.ghost_show_label,
+            "ghost_lighten": config.ghost_lighten,
+            "ghost_opacity": config.ghost_opacity,
+            "ghost_stroke_width": config.ghost_stroke_width,
+            "axes_length": config.axes_length,
+            "axes_font_size": config.axes_font_size,
+            "axes_line_color": config.axes_line_color,
         }
 
         gui = AtomGui(
@@ -537,7 +540,6 @@ class AseView:
             rotations=config.rotations,
             element_colors=self.get_element_colors(),
             label_sites=label_sites,
-            ghost_settings=ghost_settings,
             miller_planes=config.miller_planes,
         )
         if bring_to_top:
