@@ -1,5 +1,7 @@
 """A module for creating an SVG visualisation of a structure."""
 from itertools import cycle
+import os
+import tempfile
 
 import numpy as np
 from svgwrite import Drawing, shapes, text
@@ -252,3 +254,33 @@ def concatenate_svgs(
                 )
             )
     return Figure(width, height, *elements)
+
+
+def svg_to_pdf(svg, fname=None):
+    """Convert SVG to PDF.
+
+    To view in notebook::
+
+        from IPython.display import display_pdf
+
+        rlg_drawing = svg_to_pdf(svg)
+        display_pdf(rlg_drawing.asString("pdf"), raw=True)
+
+    """
+    from svglib.svglib import svg2rlg
+    from reportlab.graphics import renderPDF
+
+    string = get_svg_string(svg)
+    fd, fname = tempfile.mkstemp()
+    try:
+        with open(fname, "w") as handle:
+            handle.write(string)
+        rlg_drawing = svg2rlg(fname)
+    finally:
+        if os.path.exists(fname):
+            os.remove(fname)
+
+    if fname:
+        renderPDF.drawToFile(rlg_drawing, fname)
+
+    return rlg_drawing
