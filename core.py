@@ -24,7 +24,7 @@ def compute_projection(element_group, wsize, rotation, whitespace=1.3):
     return center, scale
 
 
-def rotate(rotations, init_rotation=None):
+def get_rotation_matrix(rotations, init_rotation=None):
     """Convert string of format '50x,-10y,120z' to a rotation matrix.
 
     Note that the order of rotation matters, i.e. '50x,40z' is different
@@ -509,11 +509,12 @@ class DrawGroup(Mapping):
 
     def yield_zorder(self):
         """Yield elements, in order of the z-coordinate."""
-        keys = [(el.name, i) for el in self._elements.values() for i in range(len(el))]
-        for i in np.concatenate(
-            [el.get_max_zposition() for el in self._elements.values()]
-        ).argsort():
-            yield self[keys[i][0]][keys[i][1]]
+        keys = [(el.name, i) for el in self.values() for i in range(len(el))]
+        z_positions = np.concatenate([el.get_max_zposition() for el in self.values()])
+        z_min = z_positions.min()
+        z_max = z_positions.max()
+        for i in z_positions.argsort():
+            yield self[keys[i][0]][keys[i][1]], (z_min, z_max)
 
 
 def initialise_element_groups(

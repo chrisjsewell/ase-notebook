@@ -7,15 +7,33 @@ import numpy as np
 from svgwrite import Drawing, shapes, text
 from svgwrite.container import Group
 
+from aiida_2d.visualize.color import Color
 
-def generate_svg_elements(element_group, scale):
-    """Create the SVG elements, related to the 3D objects."""
+
+def generate_svg_elements(element_group):
+    """Create the SVG elements, related to the 3D objects.
+
+    Parameters
+    ----------
+    element_group : aiida_2d.visualize.core.DrawGroup
+        Container of all element groups to be created.
+    lighten_by_depth : float
+        Fraction (0 to 1) by which to lighten atom colors,
+        based on their fractional distance along the line from the
+        maximum to minimum z-coordinate of all elements
+
+    Returns
+    -------
+    list[svgwrite.base.BaseElement]
+
+    """
     svg_elements = []
 
-    for element in element_group.yield_zorder():
+    for element, (zmin, zmax) in element_group.yield_zorder():
         if element.name == "atoms":
             if not element.get("visible", True):
                 continue
+
             svg_elements.append(
                 shapes.Circle(
                     element.position[:2],
@@ -42,7 +60,7 @@ def generate_svg_elements(element_group, scale):
                 shapes.Line(
                     element.position[0][:2],
                     element.position[1][:2],
-                    stroke="black",
+                    stroke=element.get("color", "black"),
                     stroke_dasharray=f"{element.get('dashed', '6,4')}",
                 )
             )
@@ -93,7 +111,15 @@ def generate_svg_elements(element_group, scale):
 
 
 def create_axes_elements(
-    axes, window_size, length=15, width=1, font_size=14, inset=(20, 20), font_offset=1.0
+    axes,
+    window_size,
+    *,
+    length=15,
+    font_size=14,
+    inset=(20, 20),
+    font_offset=1.0,
+    line_width=1,
+    line_color="black",
 ):
     """Create the SVG elements, related to the axes."""
     rgb = ["red", "green", "blue"]
@@ -108,7 +134,7 @@ def create_axes_elements(
         e = int(axes[i][0] * length * font_offset + a)
         f = int(axes[i][1] * length * font_offset + b)
         svg_elements.append(
-            shapes.Line([a, b], [c, d], stroke="black", stroke_width=width)
+            shapes.Line([a, b], [c, d], stroke=line_color, stroke_width=line_width)
         )
         svg_elements.append(
             text.Text(
@@ -125,7 +151,7 @@ def create_axes_elements(
     return svg_elements
 
 
-def create_svg_document(elements, size, viewbox=None):
+def create_svg_document(elements, size, viewbox=None, background_color="white"):
     """Create the full SVG document.
 
     :param viewbox: (minx, miny, width, height)
@@ -133,6 +159,9 @@ def create_svg_document(elements, size, viewbox=None):
     dwg = Drawing("ase.svg", profile="tiny", size=size)
     root = Group(id="root")
     dwg.add(root)
+    if Color(background_color).web != "white":
+        # apparently the best way, see: https://stackoverflow.com/a/11293812/5033292
+        root.add(shapes.Rect(size=size, fill=background_color))
     for element in elements:
         root.add(element)
     if viewbox:

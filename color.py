@@ -995,14 +995,18 @@ class Color(object):
         return NotImplemented
 
 
-def lighten_hexcolor(hex_color, fraction):
-    """Move a hex color towards white by a fraction."""
+def lighten_webcolor(web_color, fraction):
+    """Move a web color towards white by a fraction, or black if the fraction is negative."""
+    if fraction == 0:
+        return web_color
+
     import numpy as np
 
-    if fraction <= 0:
-        return hex_color
-    hex_color = hex_color.lstrip("#")
-    rgb = np.array([int(hex_color[i : i + 2], 16) for i in (0, 2, 4)])
-    white = np.array([255, 255, 255])
-    rgb = rgb + (white - rgb) * fraction
-    return "#{0:02X}{1:02X}{2:02X}".format(*(int(x * 255) for x in rgb))
+    rgb = np.array(web2rgb(web_color))
+    if fraction > 0:
+        white = np.array([1.0, 1.0, 1.0])
+        rgb = rgb + (white - rgb) * fraction
+    else:
+        black = np.array([0.0, 0.0, 0.0])
+        rgb = rgb + (black - rgb) * abs(fraction)
+    return rgb2web(rgb)

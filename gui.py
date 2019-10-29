@@ -13,7 +13,7 @@ from ase.gui.status import Status
 from ase.gui.view import GREEN, PURPLE, View
 import numpy as np
 
-from aiida_2d.visualize.color import Color
+from aiida_2d.visualize.color import lighten_webcolor
 from aiida_2d.visualize.core import initialise_element_groups
 
 
@@ -249,11 +249,7 @@ class AtomGui(GUI):
         arc = self.window.arc
 
         if ghost:
-            atom_color = Color(color)
-            atom_color.luminance += (1 - atom_color.luminance) * self.ghost_settings[
-                "lighten"
-            ]
-            atom_color = atom_color.web
+            atom_color = lighten_webcolor(color, self.ghost_settings["lighten"])
         else:
             atom_color = color
 
@@ -506,6 +502,7 @@ class AtomGui(GUI):
                         positions["cell_lines"][line_idx, 1, 0] + celldisp[0],
                         positions["cell_lines"][line_idx, 1, 1] + celldisp[1],
                     ),
+                    # TODO implement color
                     width=1,
                     dash=(6, 4),  # dash pattern = (line length, gap length, ..)
                     tags=("cell-line",),

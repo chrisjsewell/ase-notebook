@@ -1,4 +1,4 @@
-"""A module for creating an SVG visualisation of a structure."""
+"""A module for creating visualisations of a structure."""
 import importlib
 import inspect
 import json
@@ -15,11 +15,11 @@ from attr.validators import in_, instance_of
 import jsonschema
 import numpy as np
 
-from aiida_2d.visualize.color import Color
+from aiida_2d.visualize.color import Color, lighten_webcolor
 from aiida_2d.visualize.core import (
     compute_projection,
+    get_rotation_matrix,
     initialise_element_groups,
-    rotate,
     VESTA_ELEMENT_INFO,
 )
 from aiida_2d.visualize.gui import AtomGui, AtomImages
@@ -103,6 +103,7 @@ class ViewConfig:
     atom_colormap_range: Union[list, tuple] = attr.ib(
         default=(None, None), validator=instance_of((list, tuple))
     )
+    atom_lighten_by_depth: float = attr.ib(default=0.0, validator=is_positive_number)
     atom_opacity: float = attr.ib(default=0.95, validator=is_positive_number)
     ghost_stroke_width: float = attr.ib(default=0.0, validator=is_positive_number)
     ghost_lighten: float = attr.ib(default=0.0, validator=is_positive_number)
@@ -113,6 +114,7 @@ class ViewConfig:
         default=False, validator=instance_of((bool, list, tuple))
     )
     uc_segments: float = attr.ib(default=None)
+    uc_color: str = attr.ib(default="black", validator=is_html_color)
     show_bonds: bool = attr.ib(default=False, validator=instance_of(bool))
     bond_opacity: float = attr.ib(default=0.8, validator=is_positive_number)
     show_miller_planes: bool = attr.ib(default=True, validator=instance_of(bool))
@@ -124,6 +126,7 @@ class ViewConfig:
     show_axes: bool = attr.ib(default=True, validator=instance_of(bool))
     axes_length: float = attr.ib(default=15, validator=is_positive_number)
     axes_font_size: int = attr.ib(default=14, validator=is_positive_number)
+    axes_line_color: str = attr.ib(default="black", validator=is_html_color)
     canvas_size: Union[list, tuple] = attr.ib(
         default=(400, 400), validator=instance_of((list, tuple))
     )
@@ -334,7 +337,6 @@ class AseView:
 
         atom_radii = self.get_atom_radii(atoms)
         atom_colors = self.get_atom_colors(atoms)
-        # TODO lighten color by z-depth, or if ghost
         atom_labels = self.get_atom_labels(atoms)
         ghost_atoms = (
             atoms.get_array("ghost")
@@ -351,7 +353,7 @@ class AseView:
             miller_planes=config.miller_planes if config.show_miller_planes else None,
         )
 
-        rotation_matrix = rotate(config.rotations)
+        rotation_matrix = get_rotation_matrix(config.rotations)
 
         center, scale = compute_projection(
             element_groups, config.canvas_size, rotation_matrix
@@ -364,6 +366,18 @@ class AseView:
         element_groups.update_positions(axes, offset, scale)
         if config.show_bonds:
             element_groups["atoms"]._scale *= 0.65  # TODO accessing protected attribute
+
+        if config.atom_lighten_by_depth:
+            z_positions = element_groups["atoms"].get_max_zposition()
+            zmin, zmax = z_positions.min(), z_positions.max()
+            new_atom_colors = []
+            for atom_color, z_position in zip(atom_colors, z_positions):
+                atom_depth = (zmax - z_position) / (zmax - zmin)
+                atom_color = lighten_webcolor(
+                    atom_color, atom_depth * config.atom_lighten_by_depth
+                )
+                new_atom_colors.append(atom_color)
+            atom_colors = new_atom_colors
 
         element_groups["atoms"].set_property_many(
             {
@@ -386,6 +400,9 @@ class AseView:
         )
         element_groups["atoms"].set_property_many(
             {"font_size": config.atom_font_size}, element=False
+        )
+        element_groups["cell_lines"].set_property_many(
+            {"color": config.uc_color}, element=False
         )
         element_groups["bond_lines"].set_property(
             "color",
@@ -429,8 +446,7 @@ class AseView:
         atoms, element_groups, rotation_matrix, scale = self._prepare_elements(
             atoms, center_in_uc=center_in_uc, repeat_uc=repeat_uc
         )
-        # TODO lighten ghost atoms, if config.ghost_lighten
-        svg_elements = generate_svg_elements(element_groups, scale)
+        svg_elements = generate_svg_elements(element_groups)
 
         if config.canvas_crop:
             left, right, top, bottom = config.canvas_crop
@@ -453,11 +469,15 @@ class AseView:
                     inset=(20 + left, 20 + bottom),
                     length=config.axes_length,
                     font_size=config.axes_font_size,
+                    line_color=config.axes_line_color,
                 )
             )
-        # TODO use config.canvas_color_foreground and config.canvas_color_background
+
         return create_svg_document(
-            svg_elements, config.canvas_size, viewbox if config.canvas_crop else None
+            svg_elements,
+            config.canvas_size,
+            viewbox if config.canvas_crop else None,
+            background_color=config.canvas_color_background,
         )
 
     def make_gui(
@@ -486,6 +506,8 @@ class AseView:
         )
         if not config.atom_show_label:
             label_sites = 0
+        # TODO config.uc_color, config.axes_line_color
+
         config_settings = {
             "gui_foreground_color": config.canvas_color_foreground,
             "gui_background_color": config.canvas_color_background,
