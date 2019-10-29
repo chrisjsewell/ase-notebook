@@ -407,8 +407,8 @@ class AseView:
         element_groups["bond_lines"].set_property(
             "color",
             [
-                (atom_colors[e.atom_index[0]], atom_colors[e.atom_index[1]])
-                for e in element_groups["bond_lines"]
+                (atom_colors[i], atom_colors[j])
+                for i, j in element_groups["bond_lines"].get_property("atom_index")
             ],
             element=True,
         )
@@ -420,12 +420,12 @@ class AseView:
             element_groups[miller_type].set_property_many(
                 {
                     "color": [
-                        config.miller_planes[el.index].get("color", "blue")
-                        for el in element_groups[miller_type]
+                        config.miller_planes[i].get("color", "blue")
+                        for i in element_groups[miller_type].get_property("index")
                     ],
                     "stroke_width": [
-                        config.miller_planes[el.index].get("stroke_width", 1)
-                        for el in element_groups[miller_type]
+                        config.miller_planes[i].get("stroke_width", 1)
+                        for i in element_groups[miller_type].get_property("index")
                     ],
                 },
                 element=True,
@@ -520,10 +520,11 @@ class AseView:
             "show_bonds": config.show_bonds,
             "show_millers": config.show_miller_planes,
             "swap_mouse": False,
+            "atom_lighten_by_depth": config.atom_lighten_by_depth,
         }
         ghost_settings = {
             "display": True,
-            "cross": False,
+            "cross": False,  # TODO make option
             "label": config.ghost_show_label,
             "lighten": config.ghost_lighten,
             "opacity": config.ghost_opacity,

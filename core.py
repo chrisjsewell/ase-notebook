@@ -284,6 +284,14 @@ class DrawElementsBase:
         for key, val in properties.items():
             self.set_property(key, val, element=element)
 
+    def get_property(self, name):
+        """Return a single property."""
+        if name in self._el_props:
+            return self._el_props[name]
+        if name in self._grp_props:
+            return [self._grp_props[name] for _ in range(len(self))]
+        raise KeyError(f"{name} no tin properties")
+
     def __len__(self):
         """Return the number of elements."""
         return len(self._coordinates)
@@ -511,10 +519,8 @@ class DrawGroup(Mapping):
         """Yield elements, in order of the z-coordinate."""
         keys = [(el.name, i) for el in self.values() for i in range(len(el))]
         z_positions = np.concatenate([el.get_max_zposition() for el in self.values()])
-        z_min = z_positions.min()
-        z_max = z_positions.max()
         for i in z_positions.argsort():
-            yield self[keys[i][0]][keys[i][1]], (z_min, z_max)
+            yield i, self[keys[i][0]][keys[i][1]]
 
 
 def initialise_element_groups(

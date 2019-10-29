@@ -35,6 +35,7 @@ def get_default_settings(overrides=None):
         "show_millers": True,
         # "shift_cell": False,
         "swap_mouse": False,
+        "atom_lighten_by_depth": 0.0,
     }
     if overrides:
         dct.update(overrides)
@@ -180,17 +181,9 @@ class AtomGui(GUI):
         """Return whether to display planes."""
         return self.config["show_millers"]
 
-    def get_millers(self):
+    def get_miller_planes(self):
         """Return list of miller indices to project onto the unit cell, e.g. [(h, k, l), ...]."""
         return self._miller_planes[:]
-
-    def get_miller_color(self, index):
-        """Return colour of miller plane."""
-        return self._miller_planes[index].get("color", "blue")
-
-    def get_miller_thickness(self, index):
-        """Return thickness of miller plane lines."""
-        return self._miller_planes[index].get("stroke_width", "blue")
 
     def set_atoms(self, atoms):
         """Set the atoms, unit cell(s) and bonds to draw.
@@ -212,7 +205,7 @@ class AtomGui(GUI):
             uc_segments=self.config["unit_cell_segmentation"],
             show_bonds=self.showing_bonds(),
             bond_supercell=self.images.repeat,
-            miller_planes=self.get_millers() if self.showing_millers() else None,
+            miller_planes=self.get_miller_planes() if self.showing_millers() else None,
         )
         self.elements = elements
 
@@ -241,98 +234,6 @@ class AtomGui(GUI):
             tags=tags,
         )
 
-    def _draw_atom(
-        self, obj_indx, diameter, atom_lbound, selected, color, ghost, tag, movecolor
-    ):
-        """Draw a single atom."""
-        circle = self.circle
-        arc = self.window.arc
-
-        if ghost:
-            atom_color = lighten_webcolor(color, self.ghost_settings["lighten"])
-        else:
-            atom_color = color
-
-        if "occupancy" in self.atoms.info:
-            site_occ = self.atoms.info["occupancy"][tag]
-            # first an empty circle if a site is not fully occupied
-            if (np.sum([vector for vector in site_occ.values()])) < 1.0:
-                fill = "#ffffff"
-                circle(
-                    fill,
-                    selected,
-                    atom_lbound[0],
-                    atom_lbound[1],
-                    atom_lbound[0] + diameter,
-                    atom_lbound[1] + diameter,
-                )
-            start = 0
-            # start with the dominant species
-            for sym, occ in sorted(site_occ.items(), key=lambda x: x[1], reverse=True):
-                if np.round(occ, decimals=4) == 1.0:
-                    circle(
-                        atom_color,
-                        selected,
-                        atom_lbound[0],
-                        atom_lbound[1],
-                        atom_lbound[0] + diameter,
-                        atom_lbound[1] + diameter,
-                        tags=("atom-circle", "atom-ghost")
-                        if ghost
-                        else ("atom-circle",),
-                    )
-                else:
-                    # TODO alter for ghost
-                    extent = 360.0 * occ
-                    arc(
-                        self.colors[atomic_numbers[sym]],
-                        selected,
-                        start,
-                        extent,
-                        atom_lbound[0],
-                        atom_lbound[1],
-                        atom_lbound[0] + diameter,
-                        atom_lbound[1] + diameter,
-                    )
-                    start += extent
-        else:
-            # legacy behavior
-            # Draw the atoms
-            if (
-                self.moving
-                and obj_indx < len(self.move_atoms_mask)
-                and self.move_atoms_mask[obj_indx]
-            ):
-                circle(
-                    movecolor,
-                    False,
-                    atom_lbound[0] - 4,
-                    atom_lbound[1] - 4,
-                    atom_lbound[0] + diameter + 4,
-                    atom_lbound[1] + diameter + 4,
-                )
-
-            circle(
-                atom_color,
-                selected,
-                atom_lbound[0],
-                atom_lbound[1],
-                atom_lbound[0] + diameter,
-                atom_lbound[1] + diameter,
-                tags=("atom-circle", "atom-ghost") if ghost else ("atom-circle",),
-            )
-
-        # Draw labels on the atoms
-        if self.labels is not None:
-            if ghost and not self.ghost_settings["label"]:
-                pass
-            else:
-                self.window.text(
-                    atom_lbound[0] + diameter / 2,
-                    atom_lbound[1] + diameter / 2,
-                    str(self.labels[obj_indx]),
-                )
-
     def draw(self, status=True):
         """Draw all required objects on the canvas.
 
@@ -351,70 +252,40 @@ class AtomGui(GUI):
         offset = np.dot(self.center, axes)
         offset[:2] -= 0.5 * self.window.size
 
-        # align elements to axes
-        positions = {
-            k: (
-                np.dot(v._coordinates, axes)
-                if v.etype == "sphere"
-                else np.einsum("ijk, km -> ijm", v._coordinates, axes)
-            )
-            - offset
-            for k, v in self.elements.items()
-        }
+        element_groups = self.elements
+        element_groups.update_positions(axes, offset, self.scale)
 
-        # compute atom radii
-        atom_radii = self.get_covalent_radii() * self.scale
         if self.window["toggle-show-bonds"]:
-            atom_radii *= 0.65
-        # note self.P is used by View.release
-        atom_xy = self.P = positions["atoms"][:, :2].round().astype(int)
-        atom_lbound = (atom_xy - atom_radii[:, None]).round().astype(int)
-        atom_diameters = (2 * atom_radii).round().astype(int)
+            element_groups["atoms"]._scale *= 0.65  # TODO accessing protected attribute
 
-        # work out the order to add elements in (z-order)
-        # Note: for lines, we use the largest z of the start/end
-        zorder_indices = self.indices = np.concatenate(
-            (
-                positions["atoms"] + atom_radii[:, None],
-                positions["cell_lines"].max(axis=1),
-                positions["bond_lines"].max(axis=1),
-                positions["miller_lines"].max(axis=1),
-                # the final plane coordinate can be np.nan, if it is a triangle
-                np.nanmax(positions["miller_planes"], axis=1),
-            )
-        )[:, 2].argsort()
+        if "ghost" in self.atoms.arrays:
+            ghost_atoms = self.atoms.get_array("ghost")
+        else:
+            ghost_atoms = [False for _ in self.atoms]
 
-        # record the length of each element, so we can map to the zorder_indices
-        num_atoms = len(positions["atoms"])
-        num_cell_lines = len(positions["cell_lines"])
-        num_bond_lines = len(positions["bond_lines"])
-        num_miller_lines = len(positions["miller_lines"])
+        self.update_labels()  # set self.labels for atoms
 
-        # ensure coordinates are integer
-        positions = {
-            k: v.round().astype(int) if k != "miller_planes" else v
-            for k, v in positions.items()
-        }
+        # required by View.release
+        self.P = element_groups["atoms"].unstack_positions()[:, :2].round().astype(int)
+        self.indices = np.array([i for i, _ in element_groups.yield_zorder()])
 
-        # compute other values necessary for drawing atoms
         atom_colors = self.get_colors()
+
+        if self.config["atom_lighten_by_depth"]:
+            z_positions = element_groups["atoms"].get_max_zposition()
+            zmin, zmax = z_positions.min(), z_positions.max()
+            new_atom_colors = []
+            for atom_color, z_position in zip(atom_colors, z_positions):
+                atom_depth = (zmax - z_position) / (zmax - zmin)
+                atom_color = lighten_webcolor(
+                    atom_color, atom_depth * self.config["atom_lighten_by_depth"]
+                )
+                new_atom_colors.append(atom_color)
+            atom_colors = new_atom_colors
+
         celldisp = (
             (np.dot(self.atoms.get_celldisp().reshape((3,)), axes)).round().astype(int)
         )
-        constrained = ~self.images.get_dynamic(self.atoms)
-        selected = self.images.selected
-        visible = self.images.visible
-        self.update_labels()  # set self.labels for atoms
-        atom_tags = self.atoms.get_tags()  # extension for partial occupancies
-
-        # extension for ghost atoms
-        if "ghost" in self.atoms.arrays:
-            ghost = self.atoms.get_array("ghost")
-        else:
-            ghost = [False for _ in self.atoms]
-
-        # set linewidth for bonds
-        bond_linewidth = self.scale * 0.15
 
         vector_arrays = []
         if self.window["toggle-show-velocities"]:
@@ -427,10 +298,75 @@ class AtomGui(GUI):
             vector_arrays.append(f * self.force_vector_scale)
 
         for array in vector_arrays:
-            array[:] = (np.dot(array, axes) + positions["atoms"]).round().astype(int)
+            array[:] = (
+                (np.dot(array, axes) + element_groups["atoms"].unstack_positions())
+                .round()
+                .astype(int)
+            )
 
-        # setup drawing functions
-        line = self.window.line
+        element_groups["atoms"].set_property_many(
+            {
+                "lbound": (
+                    element_groups["atoms"].unstack_positions()[:, :2]
+                    - element_groups["atoms"].scaled_radii[:, None]
+                )
+                .round()
+                .astype(int),
+                "color": atom_colors,
+                "label": [
+                    None if g and not self.ghost_settings["label"] else l
+                    for l, g in zip(
+                        self.labels or [None for _ in ghost_atoms], ghost_atoms
+                    )
+                ],
+                "tag": self.atoms.get_tags(),
+                "ghost": ghost_atoms,
+                "selected": self.images.selected,
+                "visible": self.images.visible,
+                "constrained": ~self.images.get_dynamic(self.atoms),
+                "moving": [m if self.moving else False for m in self.move_atoms_mask]
+                if self.move_atoms_mask is not None
+                else [False for _ in self.atoms],
+                "occupancy": [
+                    self.atoms.info["occupancy"][t]
+                    if "occupancy" in self.atoms.info
+                    else None
+                    for t in self.atoms.get_tags()
+                ],
+                # "stroke_width": [
+                #     config.ghost_stroke_width if g else config.atom_stroke_width
+                #     for g in ghost_atoms
+                # ],  # TODO add atom stroke width
+            },
+            element=True,
+        )
+        element_groups["bond_lines"].set_property(
+            "color",
+            [
+                (atom_colors[i], atom_colors[j])
+                for i, j in element_groups["bond_lines"].get_property("atom_index")
+            ],
+            element=True,
+        )
+        element_groups["bond_lines"].set_property_many(
+            {"stroke_width": self.scale * 0.15}, element=False
+        )
+        miller_planes = self.get_miller_planes()
+        for miller_type in ["miller_lines", "miller_planes"]:
+            element_groups[miller_type].set_property_many(
+                {
+                    "color": [
+                        miller_planes[i].get("color", "blue")
+                        for i in element_groups[miller_type].get_property("index")
+                    ],
+                    "stroke_width": [
+                        miller_planes[i].get("stroke_width", 1)
+                        for i in element_groups[miller_type].get_property("index")
+                    ],
+                },
+                element=True,
+            )
+
         if self.arrowkey_mode == self.ARROWKEY_MOVE:
             movecolor = GREEN
         elif self.arrowkey_mode == self.ARROWKEY_ROTATE:
@@ -438,161 +374,188 @@ class AtomGui(GUI):
         else:
             movecolor = None
 
-        for obj_indx in zorder_indices:
-            if obj_indx < num_atoms:
+        for idx, element in element_groups.yield_zorder():
+            if element.name == "atoms":
 
-                if not visible[obj_indx]:
+                if not element.visible:
                     continue
 
-                diameter = atom_diameters[obj_indx]
-                # draw atom element
-                self._draw_atom(
-                    obj_indx,
-                    diameter,
-                    atom_lbound[obj_indx],
-                    selected[obj_indx],
-                    atom_colors[obj_indx],
-                    ghost[obj_indx],
-                    atom_tags[obj_indx],
-                    movecolor,
-                )
+                diameter = int(round(element.sradius * 2))
+                if element.occupancy is not None:
+                    # first an empty circle if a site is not fully occupied
+                    if (np.sum([o for o in element.occupancy.values()])) < 1.0:
+                        fill = "#ffffff"
+                        self.circle(
+                            fill,
+                            element.selected,
+                            element.lbound[0],
+                            element.lbound[1],
+                            element.lbound[0] + diameter,
+                            element.lbound[1] + diameter,
+                        )
+                    start = 0
+                    # start with the dominant species
+                    for sym, occ in sorted(
+                        element.occupancy.items(), key=lambda x: x[1], reverse=True
+                    ):
+                        if np.round(occ, decimals=4) == 1.0:
+                            self.circle(
+                                element.color,
+                                element.selected,
+                                element.lbound[0],
+                                element.lbound[1],
+                                element.lbound[0] + diameter,
+                                element.lbound[1] + diameter,
+                                tags=("atom-circle",),
+                            )
+                        else:
+                            # TODO alter for ghost
+                            extent = 360.0 * occ
+                            self.window.arc(
+                                self.colors[atomic_numbers[sym]],
+                                element.selected,
+                                start,
+                                extent,
+                                element.lbound[0],
+                                element.lbound[1],
+                                element.lbound[0] + diameter,
+                                element.lbound[1] + diameter,
+                            )
+                            start += extent
+                else:
+                    if element.moving:
+                        self.circle(
+                            movecolor,
+                            False,
+                            element.lbound[0] - 4,
+                            element.lbound[1] - 4,
+                            element.lbound[0] + diameter + 4,
+                            element.lbound[1] + diameter + 4,
+                        )
+                    self.circle(
+                        element.color,
+                        element.selected,
+                        element.lbound[0],
+                        element.lbound[1],
+                        element.lbound[0] + diameter,
+                        element.lbound[1] + diameter,
+                        tags=("atom-circle",),
+                    )
+
+                if element.label is not None:
+                    self.window.text(
+                        element.lbound[0] + diameter / 2,
+                        element.lbound[1] + diameter / 2,
+                        str(element.label),
+                    )
 
                 # Draw cross on constrained or ghost atoms
-                if constrained[obj_indx] or (
-                    ghost[obj_indx] and self.ghost_settings["cross"]
+                if element.constrained or (
+                    element.ghost and self.ghost_settings["cross"]
                 ):
                     rad1 = int(0.14644 * diameter)
                     rad2 = int(0.85355 * diameter)
-                    line(
+                    self.window.line(
                         (
-                            atom_lbound[obj_indx, 0] + rad1,
-                            atom_lbound[obj_indx, 1] + rad1,
-                            atom_lbound[obj_indx, 0] + rad2,
-                            atom_lbound[obj_indx, 1] + rad2,
+                            element.lbound[0] + rad1,
+                            element.lbound[1] + rad1,
+                            element.lbound[0] + rad2,
+                            element.lbound[1] + rad2,
                         )
                     )
-                    line(
+                    self.window.line(
                         (
-                            atom_lbound[obj_indx, 0] + rad2,
-                            atom_lbound[obj_indx, 1] + rad1,
-                            atom_lbound[obj_indx, 0] + rad1,
-                            atom_lbound[obj_indx, 1] + rad2,
+                            element.lbound[0] + rad2,
+                            element.lbound[1] + rad1,
+                            element.lbound[0] + rad1,
+                            element.lbound[1] + rad2,
                         )
                     )
 
                 # Draw velocities and/or forces
+                # TODO vector data should be added to element
                 for vector in vector_arrays:
                     assert not np.isnan(vector).any()
                     self.arrow(
                         (
-                            positions["atoms"][obj_indx, 0],
-                            positions["atoms"][obj_indx, 1],
-                            vector[obj_indx, 0],
-                            vector[obj_indx, 1],
+                            element.position[0],
+                            element.position[1],
+                            vector[idx, 0],
+                            vector[idx, 1],
                         ),
                         width=2,
                     )
-            elif obj_indx < num_atoms + num_cell_lines:
-                # Draw unit cell lines
-                line_idx = obj_indx - num_atoms
+
+            if element.name == "cell_lines":
+
                 self.window.canvas.create_line(
                     (
-                        positions["cell_lines"][line_idx, 0, 0] + celldisp[0],
-                        positions["cell_lines"][line_idx, 0, 1] + celldisp[1],
-                        positions["cell_lines"][line_idx, 1, 0] + celldisp[0],
-                        positions["cell_lines"][line_idx, 1, 1] + celldisp[1],
+                        element.position[0, 0] + celldisp[0],
+                        element.position[0, 1] + celldisp[1],
+                        element.position[1, 0] + celldisp[0],
+                        element.position[1, 1] + celldisp[1],
                     ),
                     # TODO implement color
                     width=1,
                     dash=(6, 4),  # dash pattern = (line length, gap length, ..)
                     tags=("cell-line",),
                 )
-            elif obj_indx < num_atoms + num_cell_lines + num_bond_lines:
-                # Draw bond lines, splitting in half, and colouring each half by nearest atom
-                # TODO would be nice if bonds had an outline
-                line_idx = obj_indx - num_atoms - num_cell_lines
-                start_atom, end_atom = self.elements["bond_lines"][line_idx].atom_index
+
+            if element.name == "bond_lines":
+
                 self.window.canvas.create_line(
                     (
-                        positions["bond_lines"][line_idx, 0, 0],
-                        positions["bond_lines"][line_idx, 0, 1],
-                        positions["bond_lines"][line_idx, 0, 0]
-                        + 0.5
-                        * (
-                            positions["bond_lines"][line_idx, 1, 0]
-                            - positions["bond_lines"][line_idx, 0, 0]
-                        ),
-                        positions["bond_lines"][line_idx, 0, 1]
-                        + 0.5
-                        * (
-                            positions["bond_lines"][line_idx, 1, 1]
-                            - positions["bond_lines"][line_idx, 0, 1]
-                        ),
+                        element.position[0, 0],
+                        element.position[0, 1],
+                        element.position[0, 0]
+                        + 0.5 * (element.position[1, 0] - element.position[0, 0]),
+                        element.position[0, 1]
+                        + 0.5 * (element.position[1, 1] - element.position[0, 1]),
                     ),
-                    width=bond_linewidth,
-                    fill=atom_colors[start_atom],
+                    width=element.stroke_width,
+                    fill=element.color[0],
                     tags=("bond-line",),
                 )
                 self.window.canvas.create_line(
                     (
-                        positions["bond_lines"][line_idx, 0, 0]
-                        + 0.5
-                        * (
-                            positions["bond_lines"][line_idx, 1, 0]
-                            - positions["bond_lines"][line_idx, 0, 0]
-                        ),
-                        positions["bond_lines"][line_idx, 0, 1]
-                        + 0.5
-                        * (
-                            positions["bond_lines"][line_idx, 1, 1]
-                            - positions["bond_lines"][line_idx, 0, 1]
-                        ),
-                        positions["bond_lines"][line_idx, 1, 0],
-                        positions["bond_lines"][line_idx, 1, 1],
+                        element.position[0, 0]
+                        + 0.5 * (element.position[1, 0] - element.position[0, 0]),
+                        element.position[0, 1]
+                        + 0.5 * (element.position[1, 1] - element.position[0, 1]),
+                        element.position[1, 0],
+                        element.position[1, 1],
                     ),
-                    width=bond_linewidth,
-                    fill=atom_colors[end_atom],
+                    width=element.stroke_width,
+                    fill=element.color[1],
                     tags=("bond-line",),
                 )
-            elif (
-                obj_indx
-                < num_atoms + num_cell_lines + num_bond_lines + num_miller_lines
-            ):
-                miller_indx = obj_indx - num_atoms - num_cell_lines - num_bond_lines
+
+            if element.name == "miller_lines":
+
                 self.window.canvas.create_line(
                     (
-                        positions["miller_lines"][miller_indx, 0, 0] + celldisp[0],
-                        positions["miller_lines"][miller_indx, 0, 1] + celldisp[1],
-                        positions["miller_lines"][miller_indx, 1, 0] + celldisp[0],
-                        positions["miller_lines"][miller_indx, 1, 1] + celldisp[1],
+                        element.position[0, 0] + celldisp[0],
+                        element.position[0, 1] + celldisp[1],
+                        element.position[1, 0] + celldisp[0],
+                        element.position[1, 1] + celldisp[1],
                     ),
-                    width=self.get_miller_thickness(
-                        self.elements["miller_lines"][miller_indx].index
-                    ),
-                    fill=self.get_miller_color(
-                        self.elements["miller_lines"][miller_indx].index
-                    ),
+                    width=element.stroke_width,
+                    fill=element.color,
                     tags=("miller-line",),
                 )
-            else:
-                miller_indx = (
-                    obj_indx
-                    - num_atoms
-                    - num_cell_lines
-                    - num_bond_lines
-                    - num_miller_lines
-                )
-                plane = positions["miller_planes"][miller_indx]
+
+            if element.name == "miller_planes":
+
                 plane_pts = [
                     pt[i] + celldisp[i]
-                    for pt in plane.round().astype(int)
+                    for pt in element.position.round().astype(int)
                     for i in [0, 1]
                 ]
                 self.window.canvas.create_polygon(
                     plane_pts,
-                    width=self.get_miller_thickness(miller_indx),
-                    outline=self.get_miller_color(miller_indx),
-                    fill=self.get_miller_color(miller_indx),
+                    width=element.stroke_width,
+                    outline=element.color,
+                    fill=element.color,
                     tags=("miller-plane",),
                 )
 

@@ -29,7 +29,7 @@ def generate_svg_elements(element_group):
     """
     svg_elements = []
 
-    for element, (zmin, zmax) in element_group.yield_zorder():
+    for _, element in element_group.yield_zorder():
         if element.name == "atoms":
             if not element.get("visible", True):
                 continue
