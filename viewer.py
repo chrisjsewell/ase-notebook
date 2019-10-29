@@ -23,7 +23,11 @@ from aiida_2d.visualize.core import (
     VESTA_ELEMENT_INFO,
 )
 from aiida_2d.visualize.gui import AtomGui, AtomImages
-from aiida_2d.visualize.svg import create_axes_elements, Drawing, generate_svg_elements
+from aiida_2d.visualize.svg import (
+    create_axes_elements,
+    create_svg_document,
+    generate_svg_elements,
+)
 
 
 def is_positive_number(self, attribute, value):
@@ -126,9 +130,17 @@ class ViewConfig:
     canvas_color_foreground: str = attr.ib(default="#000000", validator=is_html_color)
     canvas_color_background: str = attr.ib(default="#ffffff", validator=is_html_color)
     zoom: float = attr.ib(default=1.0, validator=is_positive_number)
-    crop_fraction: Union[list, tuple] = attr.ib(
-        default=(1.0, 1.0), validator=instance_of((list, tuple))
-    )
+    canvas_crop: Union[list, tuple, None] = attr.ib(default=None)
+
+    @canvas_crop.validator
+    def _validate_canvas_crop(self, attribute, value):
+        """Validate crop is of form (left, right, top, bottom)."""
+        if value is None:
+            return
+        if not isinstance(value, (list, tuple)) or len(value) != 4:
+            raise TypeError(
+                f"'{attribute.name}' must be of the form (left, right, top, bottom)."
+            )
 
     @miller_planes.validator
     def _validate_miller_planes(self, attribute, value):
@@ -419,22 +431,34 @@ class AseView:
         )
         # TODO lighten ghost atoms, if config.ghost_lighten
         svg_elements = generate_svg_elements(element_groups, scale)
-        # TODO cropping should be from all sides
-        canvas_size = (np.array(config.canvas_size) * config.crop_fraction).tolist()
+
+        if config.canvas_crop:
+            left, right, top, bottom = config.canvas_crop
+            # (left, right, top, bottom) -> (minx, miny, width, height)
+            viewbox = (
+                left,
+                top,
+                config.canvas_size[0] - left - right,
+                config.canvas_size[1] - top - bottom,
+            )
+        else:
+            left = right = top = bottom = 0
+            viewbox = (0, 0, config.canvas_size[0], config.canvas_size[1])
+
         if config.show_axes:
             svg_elements.extend(
                 create_axes_elements(
                     rotation_matrix * (1, -1, 1),
-                    canvas_size,
+                    config.canvas_size,
+                    inset=(20 + left, 20 + bottom),
                     length=config.axes_length,
                     font_size=config.axes_font_size,
                 )
             )
         # TODO use config.canvas_color_foreground and config.canvas_color_background
-        dwg = Drawing("ase.svg", profile="tiny", size=canvas_size)
-        for svg_element in svg_elements:
-            dwg.add(svg_element)
-        return dwg
+        return create_svg_document(
+            svg_elements, config.canvas_size, viewbox if config.canvas_crop else None
+        )
 
     def make_gui(
         self,
@@ -559,12 +583,9 @@ def _launch_gui_exec():
     ase_view.make_gui(structure, **kwargs)
 
 
+# Note: original commands (when creating SVG via tkinter postscript)
 # gui.window.win.withdraw()  # hide window
 # canvas = gui.window.canvas
 # canvas.config(width=100, height=100); gui.draw()  # resize canvas
 # gui.scale *= zoom; gui.draw()  # zoom
 # canvas.postscript(file=fname)  # save canvas
-
-
-# from svgutils.transform import fromstring
-# image = fromstring(image)
