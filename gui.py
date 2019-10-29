@@ -3,6 +3,7 @@
 The module subclasses ase (v3.18.0) classes, to add additional functionality.
 """
 from time import time
+import tkinter
 
 from ase.data import atomic_numbers
 from ase.data import covalent_radii as default_covalent_radii
@@ -214,26 +215,6 @@ class AtomGui(GUI):
         # record atom positions with legacy array name, used by View.move
         self.X_pos = self.elements["atoms"]._positions.copy()
 
-    def circle(self, color, selected, *bbox, tags=()):
-        """Add a circle element.
-
-        Replacement to ``View.circle``, but with added tags option
-
-        """
-        if selected:
-            outline = "#004500"
-            width = 3
-        else:
-            outline = "black"
-            width = 1
-        self.window.canvas.create_oval(
-            *tuple(int(x) for x in bbox),
-            fill=color,
-            outline=outline,
-            width=width,
-            tags=tags,
-        )
-
     def draw(self, status=True):
         """Draw all required objects on the canvas.
 
@@ -374,190 +355,17 @@ class AtomGui(GUI):
         else:
             movecolor = None
 
-        for idx, element in element_groups.yield_zorder():
-            if element.name == "atoms":
-
-                if not element.visible:
-                    continue
-
-                diameter = int(round(element.sradius * 2))
-                if element.occupancy is not None:
-                    # first an empty circle if a site is not fully occupied
-                    if (np.sum([o for o in element.occupancy.values()])) < 1.0:
-                        fill = "#ffffff"
-                        self.circle(
-                            fill,
-                            element.selected,
-                            element.lbound[0],
-                            element.lbound[1],
-                            element.lbound[0] + diameter,
-                            element.lbound[1] + diameter,
-                        )
-                    start = 0
-                    # start with the dominant species
-                    for sym, occ in sorted(
-                        element.occupancy.items(), key=lambda x: x[1], reverse=True
-                    ):
-                        if np.round(occ, decimals=4) == 1.0:
-                            self.circle(
-                                element.color,
-                                element.selected,
-                                element.lbound[0],
-                                element.lbound[1],
-                                element.lbound[0] + diameter,
-                                element.lbound[1] + diameter,
-                                tags=("atom-circle",),
-                            )
-                        else:
-                            # TODO alter for ghost
-                            extent = 360.0 * occ
-                            self.window.arc(
-                                self.colors[atomic_numbers[sym]],
-                                element.selected,
-                                start,
-                                extent,
-                                element.lbound[0],
-                                element.lbound[1],
-                                element.lbound[0] + diameter,
-                                element.lbound[1] + diameter,
-                            )
-                            start += extent
-                else:
-                    if element.moving:
-                        self.circle(
-                            movecolor,
-                            False,
-                            element.lbound[0] - 4,
-                            element.lbound[1] - 4,
-                            element.lbound[0] + diameter + 4,
-                            element.lbound[1] + diameter + 4,
-                        )
-                    self.circle(
-                        element.color,
-                        element.selected,
-                        element.lbound[0],
-                        element.lbound[1],
-                        element.lbound[0] + diameter,
-                        element.lbound[1] + diameter,
-                        tags=("atom-circle",),
-                    )
-
-                if element.label is not None:
-                    self.window.text(
-                        element.lbound[0] + diameter / 2,
-                        element.lbound[1] + diameter / 2,
-                        str(element.label),
-                    )
-
-                # Draw cross on constrained or ghost atoms
-                if element.constrained or (
-                    element.ghost and self.ghost_settings["cross"]
-                ):
-                    rad1 = int(0.14644 * diameter)
-                    rad2 = int(0.85355 * diameter)
-                    self.window.line(
-                        (
-                            element.lbound[0] + rad1,
-                            element.lbound[1] + rad1,
-                            element.lbound[0] + rad2,
-                            element.lbound[1] + rad2,
-                        )
-                    )
-                    self.window.line(
-                        (
-                            element.lbound[0] + rad2,
-                            element.lbound[1] + rad1,
-                            element.lbound[0] + rad1,
-                            element.lbound[1] + rad2,
-                        )
-                    )
-
-                # Draw velocities and/or forces
-                # TODO vector data should be added to element
-                for vector in vector_arrays:
-                    assert not np.isnan(vector).any()
-                    self.arrow(
-                        (
-                            element.position[0],
-                            element.position[1],
-                            vector[idx, 0],
-                            vector[idx, 1],
-                        ),
-                        width=2,
-                    )
-
-            if element.name == "cell_lines":
-
-                self.window.canvas.create_line(
-                    (
-                        element.position[0, 0] + celldisp[0],
-                        element.position[0, 1] + celldisp[1],
-                        element.position[1, 0] + celldisp[0],
-                        element.position[1, 1] + celldisp[1],
-                    ),
-                    # TODO implement color
-                    width=1,
-                    dash=(6, 4),  # dash pattern = (line length, gap length, ..)
-                    tags=("cell-line",),
-                )
-
-            if element.name == "bond_lines":
-
-                self.window.canvas.create_line(
-                    (
-                        element.position[0, 0],
-                        element.position[0, 1],
-                        element.position[0, 0]
-                        + 0.5 * (element.position[1, 0] - element.position[0, 0]),
-                        element.position[0, 1]
-                        + 0.5 * (element.position[1, 1] - element.position[0, 1]),
-                    ),
-                    width=element.stroke_width,
-                    fill=element.color[0],
-                    tags=("bond-line",),
-                )
-                self.window.canvas.create_line(
-                    (
-                        element.position[0, 0]
-                        + 0.5 * (element.position[1, 0] - element.position[0, 0]),
-                        element.position[0, 1]
-                        + 0.5 * (element.position[1, 1] - element.position[0, 1]),
-                        element.position[1, 0],
-                        element.position[1, 1],
-                    ),
-                    width=element.stroke_width,
-                    fill=element.color[1],
-                    tags=("bond-line",),
-                )
-
-            if element.name == "miller_lines":
-
-                self.window.canvas.create_line(
-                    (
-                        element.position[0, 0] + celldisp[0],
-                        element.position[0, 1] + celldisp[1],
-                        element.position[1, 0] + celldisp[0],
-                        element.position[1, 1] + celldisp[1],
-                    ),
-                    width=element.stroke_width,
-                    fill=element.color,
-                    tags=("miller-line",),
-                )
-
-            if element.name == "miller_planes":
-
-                plane_pts = [
-                    pt[i] + celldisp[i]
-                    for pt in element.position.round().astype(int)
-                    for i in [0, 1]
-                ]
-                self.window.canvas.create_polygon(
-                    plane_pts,
-                    width=element.stroke_width,
-                    outline=element.color,
-                    fill=element.color,
-                    tags=("miller-plane",),
-                )
+        draw_elements(
+            element_groups,
+            canvas=self.window.canvas,
+            celldisp=celldisp,
+            vector_arrays=vector_arrays,
+            movecolor=movecolor,
+            scale=self.scale,
+            element_colors=self.colors,
+            ghost_cross=self.ghost_settings["cross"],
+        )
+        self.window.line
 
         if self.window["toggle-show-axes"]:
             self.draw_axes()
@@ -569,3 +377,278 @@ class AtomGui(GUI):
 
         if status:
             self.status(self.atoms)
+
+
+def draw_arrow(canvas, coords, width, scale):
+    """Draw an arrow element."""
+    begin = np.array((coords[0], coords[1]))
+    end = np.array((coords[2], coords[3]))
+    canvas.create_line(*tuple(int(x) for x in coords), width)
+
+    vec = end - begin
+    length = np.sqrt((vec[:2] ** 2).sum())
+    length = min(length, 0.3 * scale)
+
+    angle = np.arctan2(end[1] - begin[1], end[0] - begin[0]) + np.pi
+    x1 = (end[0] + length * np.cos(angle - 0.3)).round().astype(int)
+    y1 = (end[1] + length * np.sin(angle - 0.3)).round().astype(int)
+    x2 = (end[0] + length * np.cos(angle + 0.3)).round().astype(int)
+    y2 = (end[1] + length * np.sin(angle + 0.3)).round().astype(int)
+    canvas.create_line(x1, y1, int(end[0]), int(end[1]), width)
+    canvas.create_line(x2, y2, int(end[0]), int(end[1]), width)
+
+
+def draw_circle(canvas, color, selected, *bbox, tags=()):
+    """Draw a circle element."""
+    if selected:
+        outline = "#004500"
+        width = 3
+    else:
+        outline = "black"
+        width = 1
+    canvas.create_oval(
+        *tuple(int(x) for x in bbox),
+        fill=color,
+        outline=outline,
+        width=width,
+        tags=tags,
+    )
+
+
+def draw_arc(canvas, color, selected, start, extent, *bbox):
+    """Draw an arc element."""
+    if selected:
+        outline = "#004500"
+        width = 3
+    else:
+        outline = "black"
+        width = 1
+    canvas.create_arc(
+        *tuple(int(x) for x in bbox),
+        start=start,
+        extent=extent,
+        fill=color,
+        outline=outline,
+        width=width,
+    )
+
+
+def draw_elements(
+    element_groups,
+    canvas,
+    celldisp,
+    vector_arrays,
+    scale,
+    element_colors,
+    ghost_cross=False,
+    movecolor=None,
+):
+    """Draw elements on a ``tkinter.Canvas``.
+
+    Parameters
+    ----------
+    element_groups : aiida_2d.visualize.core.DrawGroup
+    canvas : tkinter.Canvas
+    celldisp : numpy.array
+        cell displacement
+    vector_arrays : list
+    scale : float
+        canvas scale (used for drawing vector arrows)
+    element_colors : dict
+        mapping of element colors (used for partial occupancies)
+    ghost_cross : bool
+        whether to cross out ghost atoms
+    movecolor : str or None
+        color for moving atom
+
+    """
+    for idx, element in element_groups.yield_zorder():
+        if element.name == "atoms":
+
+            if not element.visible:
+                continue
+
+            diameter = int(round(element.sradius * 2))
+            if element.occupancy is not None:
+                # first an empty circle if a site is not fully occupied
+                if (np.sum([o for o in element.occupancy.values()])) < 1.0:
+                    fill = "#ffffff"
+                    draw_circle(
+                        canvas,
+                        fill,
+                        element.selected,
+                        element.lbound[0],
+                        element.lbound[1],
+                        element.lbound[0] + diameter,
+                        element.lbound[1] + diameter,
+                    )
+                start = 0
+                # start with the dominant species
+                for sym, occ in sorted(
+                    element.occupancy.items(), key=lambda x: x[1], reverse=True
+                ):
+                    if np.round(occ, decimals=4) == 1.0:
+                        draw_circle(
+                            canvas,
+                            element.color,
+                            element.selected,
+                            element.lbound[0],
+                            element.lbound[1],
+                            element.lbound[0] + diameter,
+                            element.lbound[1] + diameter,
+                            tags=("atom-circle",),
+                        )
+                    else:
+                        # TODO alter for ghost
+                        extent = 360.0 * occ
+                        draw_arc(
+                            canvas,
+                            element_colors[atomic_numbers[sym]],
+                            element.selected,
+                            start,
+                            extent,
+                            element.lbound[0],
+                            element.lbound[1],
+                            element.lbound[0] + diameter,
+                            element.lbound[1] + diameter,
+                        )
+                        start += extent
+            else:
+                if element.moving:
+                    draw_circle(
+                        canvas,
+                        movecolor,
+                        False,
+                        element.lbound[0] - 4,
+                        element.lbound[1] - 4,
+                        element.lbound[0] + diameter + 4,
+                        element.lbound[1] + diameter + 4,
+                    )
+                draw_circle(
+                    canvas,
+                    element.color,
+                    element.selected,
+                    element.lbound[0],
+                    element.lbound[1],
+                    element.lbound[0] + diameter,
+                    element.lbound[1] + diameter,
+                    tags=("atom-circle",),
+                )
+
+            if element.label is not None:
+                canvas.create_text(
+                    (
+                        element.lbound[0] + diameter / 2,
+                        element.lbound[1] + diameter / 2,
+                    ),
+                    text=str(element.label),
+                    fill="black",
+                    anchor=tkinter.CENTER,
+                )
+
+            # Draw cross on constrained or ghost atoms
+            if element.constrained or (element.ghost and ghost_cross):
+                rad1 = int(0.14644 * diameter)
+                rad2 = int(0.85355 * diameter)
+                canvas.create_line(
+                    element.lbound[0] + rad1,
+                    element.lbound[1] + rad1,
+                    element.lbound[0] + rad2,
+                    element.lbound[1] + rad2,
+                    width=1,
+                )
+                canvas.create_line(
+                    element.lbound[0] + rad2,
+                    element.lbound[1] + rad1,
+                    element.lbound[0] + rad1,
+                    element.lbound[1] + rad2,
+                    width=1,
+                )
+
+            # Draw velocities and/or forces
+            # TODO vector data should be added to element
+            for vector in vector_arrays:
+                assert not np.isnan(vector).any()
+                draw_arrow(
+                    canvas(
+                        element.position[0],
+                        element.position[1],
+                        vector[idx, 0],
+                        vector[idx, 1],
+                    ),
+                    width=2,
+                    scale=scale,
+                )
+
+        if element.name == "cell_lines":
+
+            canvas.create_line(
+                (
+                    element.position[0, 0] + celldisp[0],
+                    element.position[0, 1] + celldisp[1],
+                    element.position[1, 0] + celldisp[0],
+                    element.position[1, 1] + celldisp[1],
+                ),
+                # TODO implement color
+                width=1,
+                dash=(6, 4),  # dash pattern = (line length, gap length, ..)
+                tags=("cell-line",),
+            )
+
+        if element.name == "bond_lines":
+
+            canvas.create_line(
+                (
+                    element.position[0, 0],
+                    element.position[0, 1],
+                    element.position[0, 0]
+                    + 0.5 * (element.position[1, 0] - element.position[0, 0]),
+                    element.position[0, 1]
+                    + 0.5 * (element.position[1, 1] - element.position[0, 1]),
+                ),
+                width=element.stroke_width,
+                fill=element.color[0],
+                tags=("bond-line",),
+            )
+            canvas.create_line(
+                (
+                    element.position[0, 0]
+                    + 0.5 * (element.position[1, 0] - element.position[0, 0]),
+                    element.position[0, 1]
+                    + 0.5 * (element.position[1, 1] - element.position[0, 1]),
+                    element.position[1, 0],
+                    element.position[1, 1],
+                ),
+                width=element.stroke_width,
+                fill=element.color[1],
+                tags=("bond-line",),
+            )
+
+        if element.name == "miller_lines":
+
+            canvas.create_line(
+                (
+                    element.position[0, 0] + celldisp[0],
+                    element.position[0, 1] + celldisp[1],
+                    element.position[1, 0] + celldisp[0],
+                    element.position[1, 1] + celldisp[1],
+                ),
+                width=element.stroke_width,
+                fill=element.color,
+                tags=("miller-line",),
+            )
+
+        if element.name == "miller_planes":
+
+            plane_pts = [
+                pt[i] + celldisp[i]
+                for pt in element.position.round().astype(int)
+                for i in [0, 1]
+            ]
+            canvas.create_polygon(
+                plane_pts,
+                width=element.stroke_width,
+                outline=element.color,
+                fill=element.color,
+                tags=("miller-plane",),
+            )
