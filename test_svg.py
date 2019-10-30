@@ -38,10 +38,8 @@ def test_tessellate_rectangles():
 
 def test_make_svg(get_test_structure):
     """Test make svg, from the viewer."""
-    struct_pyrite = get_test_structure("pyrite")
-    struct_pyrite.add_site_property(
-        "ghost", [True] + [False for _ in struct_pyrite][1:]
-    )
+    structure = get_test_structure("pyrite")
+    structure.add_site_property("ghost", [True] + [False for _ in structure][1:])
     ase_view = AseView(
         uc_segments=2,
         show_bonds=True,
@@ -55,5 +53,29 @@ def test_make_svg(get_test_structure):
         zoom=1.2,
     )
     ase_view.add_miller_plane(1, 2, 1, color="lightgreen", stroke_width=1, as_poly=True)
-    svg = ase_view.make_svg(struct_pyrite, center_in_uc=True)
+    svg = ase_view.make_svg(structure, center_in_uc=True)
+    assert len(svg.elements) == 2
+
+
+def test_make_svg_occupancies(get_test_structure):
+    """Test ``make_svg``, from the viewer, when element occupacies are specified."""
+    from pymatgen.io.ase import AseAtomsAdaptor
+
+    structure = get_test_structure("pyrite")
+    atoms = AseAtomsAdaptor.get_atoms(structure)
+    atoms.info["occupancy"] = {0: {"Fe": 0.75, "S": 0.1, "H": 0.1}}
+    ase_view = AseView(
+        uc_segments=2,
+        show_bonds=True,
+        element_colors="vesta",
+        element_radii="vesta",
+        rotations="45x,45y,45z",
+        atom_font_size=16,
+        show_axes=True,
+        axes_length=30,
+        canvas_size=(400, 400),
+        zoom=1.2,
+    )
+    ase_view.add_miller_plane(1, 2, 1, color="lightgreen", stroke_width=1, as_poly=True)
+    svg = ase_view.make_svg(structure, center_in_uc=True)
     assert len(svg.elements) == 2
