@@ -518,7 +518,6 @@ class AseView:
             element_radii=np.array(self.get_element_radii()).tolist(),
             radii_scale=self.config.radii_scale,
         )
-
         gui = AtomGui(
             config=self.config, images=images, element_colors=self.get_element_colors()
         )
