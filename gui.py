@@ -13,49 +13,11 @@ from ase.gui.gui import GUI
 from ase.gui.images import Images
 from ase.gui.status import Status
 from ase.gui.view import GREEN, PURPLE, View
+import attr
 import numpy as np
 
 from aiida_2d.visualize.color import lighten_webcolor
 from aiida_2d.visualize.core import initialise_element_groups
-
-
-def get_default_settings(overrides=None):
-    """Return the default setting for the GUI."""
-    # TODO eventually this should be repplaced by the ViewConfig
-    # values commented out are never actually utilised in the code
-    dct = {
-        # "gui_graphs_string": "i, e - E[-1]",  # default for the graph command
-        "gui_foreground_color": "#000000",
-        "gui_background_color": "#ffffff",
-        # "covalent_radii": None,
-        "radii_scale": 0.89,
-        "force_vector_scale": 1.0,
-        "velocity_vector_scale": 1.0,
-        "show_unit_cell": True,
-        "show_axes": True,
-        "show_bonds": False,
-        "show_millers": True,
-        # "shift_cell": False,
-        "swap_mouse": False,
-        "atom_lighten_by_depth": 0.0,
-        "atom_stroke_width": 1,
-        "atom_font_color": "black",
-        "atom_font_size": 14,
-        "uc_color": "black",
-        "uc_segments": None,
-        "ghost_display": True,
-        "ghost_cross": False,
-        "ghost_label": False,
-        "ghost_lighten": 0.0,
-        "ghost_stroke_width": 0,
-        "ghost_opacity": 0.4,
-        "axes_length": 15,
-        "axes_font_size": 14,
-        "axes_line_color": "black",
-    }
-    if overrides:
-        dct.update(overrides)
-    return dct
 
 
 class AtomImages(Images):
@@ -87,32 +49,17 @@ class AtomImages(Images):
 class AtomGui(GUI):
     """A subclass of the ase ``GUI``, but with additional functionality."""
 
-    def __init__(
-        self,
-        images=None,
-        config_settings=None,
-        rotations="",
-        element_colors=None,
-        label_sites=0,
-        miller_planes=(),
-    ):
+    def __init__(self, config, images=None, element_colors=None):
         """Initialise the GUI.
 
         Parameters
         ----------
+        config: ViewConfig
+            initial configuration settings
         images : ase.gui.images.Images
             list of ase.Atoms, with some settings for visualisations (mainly radii)
-        config_settings: dict or None
-            configuration settings to overrid defaults (e.g. {"show_axes": False})
-        rotations : str
-            string format of unit cell rotations '50x,-10y,120z' (note: order matters)
         element_colors: list[tuple]
             hex colour for each atomic number (defaults to 'jmol' scheme)
-        label_sites: int
-            0=None, 1=index, 2=magmoms, 3=symbols, 4=charges (see ``View.update_labels``)
-        miller_planes: list[tuple]
-            list of (h, k, l, colour, thickness, as_poly) to project onto the unit cell,
-            e.g. [(1, 0, 0, "blue", 1, True), (2, 2, 2, "green", 3.5, False)].
 
         """
         if not isinstance(images, Images):
@@ -121,8 +68,12 @@ class AtomGui(GUI):
         self.images = images
         self.observers = []
 
-        self.config = get_default_settings(config_settings)
-        self._miller_planes = miller_planes
+        self.config = attr.asdict(config)
+
+        # aliases required by ui.ASEGUIWindow
+        self.config["gui_foreground_color"] = self.config["canvas_color_foreground"]
+        self.config["gui_background_color"] = self.config["canvas_color_background"]
+        self.config["swap_mouse"] = self.config["gui_swap_mouse"]
 
         menu = self.get_menu_data()
 
@@ -137,9 +88,15 @@ class AtomGui(GUI):
             release=self.release,
             resize=self.resize,
         )
+        # used by ``View.update_labels``
+        label_sites = {"index": 1, "magmom": 2, "element": 3, "charge": 4}.get(
+            self.config["atom_label_by"], 0
+        )
+        if not self.config["atom_show_label"]:
+            label_sites = 0
         self.window["show-labels"] = label_sites
 
-        View.__init__(self, rotations)
+        View.__init__(self, self.config["rotations"])
         if element_colors:
             self.colors = dict(enumerate(element_colors))
         Status.__init__(self)
@@ -175,11 +132,7 @@ class AtomGui(GUI):
 
     def showing_millers(self):
         """Return whether to display planes."""
-        return self.config["show_millers"]
-
-    def get_miller_planes(self):
-        """Return list of miller indices to project onto the unit cell, e.g. [(h, k, l), ...]."""
-        return self._miller_planes[:]
+        return self.config["show_miller_planes"]
 
     def set_atoms(self, atoms):
         """Set the atoms, unit cell(s) and bonds to draw.
@@ -201,7 +154,9 @@ class AtomGui(GUI):
             uc_segments=self.config["uc_segments"],
             show_bonds=self.showing_bonds(),
             bond_supercell=self.images.repeat,
-            miller_planes=self.get_miller_planes() if self.showing_millers() else None,
+            miller_planes=self.config["miller_planes"]
+            if self.showing_millers()
+            else None,
         )
         self.elements = elements
 
@@ -234,16 +189,17 @@ class AtomGui(GUI):
         if self.window["toggle-show-bonds"]:
             element_groups["atoms"]._scale *= 0.65  # TODO accessing protected attribute
 
+        # required by View.release
+        self.P = element_groups["atoms"].unstack_positions()[:, :2].round().astype(int)
+        self.indices = np.array([i for i, _ in element_groups.yield_zorder()])
+
         if "ghost" in self.atoms.arrays:
             ghost_atoms = self.atoms.get_array("ghost")
         else:
             ghost_atoms = [False for _ in self.atoms]
 
         self.update_labels()  # set self.labels for atoms
-
-        # required by View.release
-        self.P = element_groups["atoms"].unstack_positions()[:, :2].round().astype(int)
-        self.indices = np.array([i for i, _ in element_groups.yield_zorder()])
+        # TODO use occuapancy keys for label, if showing symbol
 
         atom_colors = self.get_colors()
 
@@ -280,8 +236,6 @@ class AtomGui(GUI):
                 .astype(int)
             )
 
-        # TODO use occuapancy keys for label, if showing symbol
-
         element_groups["atoms"].set_property_many(
             {
                 "lbound": (
@@ -292,7 +246,7 @@ class AtomGui(GUI):
                 .astype(int),
                 "color": atom_colors,
                 "label": [
-                    None if g and not self.config["ghost_label"] else l
+                    None if g and not self.config["ghost_show_label"] else l
                     for l, g in zip(
                         self.labels or [None for _ in ghost_atoms], ghost_atoms
                     )
@@ -341,16 +295,15 @@ class AtomGui(GUI):
         element_groups["bond_lines"].set_property_many(
             {"stroke_width": self.scale * 0.15}, element=False
         )
-        miller_planes = self.get_miller_planes()
         for miller_type in ["miller_lines", "miller_planes"]:
             element_groups[miller_type].set_property_many(
                 {
                     "color": [
-                        miller_planes[i].get("color", "blue")
+                        self.config["miller_planes"][i].get("color", "blue")
                         for i in element_groups[miller_type].get_property("index")
                     ],
                     "stroke_width": [
-                        miller_planes[i].get("stroke_width", 1)
+                        self.config["miller_planes"][i].get("stroke_width", 1)
                         for i in element_groups[miller_type].get_property("index")
                     ],
                 },
@@ -372,7 +325,7 @@ class AtomGui(GUI):
             movecolor=movecolor,
             scale=self.scale,
             element_colors=self.colors,
-            ghost_cross=self.config["ghost_cross"],
+            ghost_cross_out=self.config["ghost_cross_out"],
             background_color=self.config["gui_background_color"],
         )
 
@@ -490,7 +443,7 @@ def draw_elements(
     vector_arrays,
     scale,
     element_colors,
-    ghost_cross=False,
+    ghost_cross_out=False,
     movecolor=None,
     background_color="#ffffff",
 ):
@@ -507,7 +460,7 @@ def draw_elements(
         canvas scale (used for drawing vector arrows)
     element_colors : dict
         mapping of element colors (used for partial occupancies)
-    ghost_cross : bool
+    ghost_cross_out : bool
         whether to cross out ghost atoms
     movecolor : str or None
         color for moving atom
@@ -593,7 +546,7 @@ def draw_elements(
                 )
 
             # Draw cross on constrained or ghost atoms
-            if element.constrained or (element.ghost and ghost_cross):
+            if element.constrained or (element.ghost and ghost_cross_out):
                 rad1 = int(0.14644 * diameter)
                 rad2 = int(0.85355 * diameter)
                 canvas.create_line(

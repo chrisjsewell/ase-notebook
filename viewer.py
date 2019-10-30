@@ -83,11 +83,8 @@ MILLER_SCHEMA = {
 class ViewConfig:
     """Configuration settings for atom visualisations."""
 
-    # repeat: Union[list, tuple] = attr.ib(
-    #     default=(1, 1, 1), validator=instance_of((list, tuple))
-    # )
-    # center: bool = attr.ib(default=False, validator=instance_of(bool))
     rotations: str = attr.ib(default="", validator=instance_of(str))
+    # string format of unit cell rotations '50x,-10y,120z' (note: order matters)
     element_colors: str = attr.ib(default="ase", validator=in_(("ase", "vesta")))
     element_radii: str = attr.ib(default="ase", validator=in_(("ase", "vesta")))
     radii_scale: float = attr.ib(default=0.89, validator=is_positive_number)
@@ -109,10 +106,13 @@ class ViewConfig:
     # based on their fractional distance along the line from the
     # maximum to minimum z-coordinate of all elements
     atom_opacity: float = attr.ib(default=0.95, validator=is_positive_number)
+    force_vector_scale: float = attr.ib(default=1.0, validator=is_positive_number)
+    velocity_vector_scale: float = attr.ib(default=1.0, validator=is_positive_number)
     ghost_stroke_width: float = attr.ib(default=0.0, validator=is_positive_number)
     ghost_lighten: float = attr.ib(default=0.0, validator=is_positive_number)
     ghost_opacity: float = attr.ib(default=0.4, validator=is_positive_number)
     ghost_show_label: bool = attr.ib(default=False, validator=instance_of(bool))
+    ghost_cross_out: bool = attr.ib(default=False, validator=instance_of(bool))
     show_unit_cell: bool = attr.ib(default=True, validator=instance_of(bool))
     show_uc_repeats: Union[bool, list] = attr.ib(
         default=False, validator=instance_of((bool, list, tuple))
@@ -138,6 +138,7 @@ class ViewConfig:
     canvas_color_background: str = attr.ib(default="#ffffff", validator=is_html_color)
     zoom: float = attr.ib(default=1.0, validator=is_positive_number)
     canvas_crop: Union[list, tuple, None] = attr.ib(default=None)
+    gui_swap_mouse: bool = attr.ib(default=False, validator=instance_of(bool))
 
     @canvas_crop.validator
     def _validate_canvas_crop(self, attribute, value):
@@ -321,6 +322,7 @@ class AseView:
             for key, array in structure.site_properties.items():
                 if key not in atoms.arrays:
                     atoms.set_array(key, np.array(array))
+            # TODO propogate partial occupancies
             return atoms
 
         if isinstance(atoms, Structure) and to_structure:
@@ -507,8 +509,6 @@ class AseView:
         launch=True,
     ):
         """Launch a (blocking) GUI to view the atoms or structure."""
-        config = self.config
-
         atoms, element_groups, rotation_matrix, scale = self._prepare_elements(
             atoms, center_in_uc=center_in_uc, repeat_uc=repeat_uc
         )
@@ -516,51 +516,11 @@ class AseView:
         images = AtomImages(
             [atoms],
             element_radii=np.array(self.get_element_radii()).tolist(),
-            radii_scale=config.radii_scale,
+            radii_scale=self.config.radii_scale,
         )
-
-        label_sites = {"index": 1, "magmom": 2, "element": 3, "charge": 4}.get(
-            config.atom_label_by, 0
-        )
-        if not config.atom_show_label:
-            label_sites = 0
-
-        # TODO eventually just parse the config
-        config_settings = {
-            "gui_foreground_color": config.canvas_color_foreground,
-            "gui_background_color": config.canvas_color_background,
-            "radii_scale": config.radii_scale,
-            "force_vector_scale": 1.0,
-            "velocity_vector_scale": 1.0,
-            "show_unit_cell": config.show_unit_cell,
-            "uc_segments": config.uc_segments,
-            "uc_color": config.uc_color,
-            "show_axes": config.show_axes,
-            "show_bonds": config.show_bonds,
-            "show_millers": config.show_miller_planes,
-            "swap_mouse": False,
-            "atom_stroke_width": config.atom_stroke_width,
-            "atom_lighten_by_depth": config.atom_lighten_by_depth,
-            "atom_font_color": config.atom_font_color,
-            "atom_font_size": config.atom_font_size,
-            "ghost_display": True,
-            "ghost_cross": False,  # TODO make option
-            "ghost_label": config.ghost_show_label,
-            "ghost_lighten": config.ghost_lighten,
-            "ghost_opacity": config.ghost_opacity,
-            "ghost_stroke_width": config.ghost_stroke_width,
-            "axes_length": config.axes_length,
-            "axes_font_size": config.axes_font_size,
-            "axes_line_color": config.axes_line_color,
-        }
 
         gui = AtomGui(
-            images,
-            config_settings=config_settings,
-            rotations=config.rotations,
-            element_colors=self.get_element_colors(),
-            label_sites=label_sites,
-            miller_planes=config.miller_planes,
+            config=self.config, images=images, element_colors=self.get_element_colors()
         )
         if bring_to_top:
             tk_window = gui.window.win  # tkinter.Toplevel

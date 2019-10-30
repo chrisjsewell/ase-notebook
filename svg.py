@@ -101,6 +101,8 @@ def generate_svg_elements(element_group, element_colors=None, background_color="
                         fill=element.get("font_color", "black"),
                     )
                 )
+            # TODO add force/velocity vectors
+            # TODO add ghost crosses
         if element.name == "cell_lines":
             svg_elements.append(
                 shapes.Line(
