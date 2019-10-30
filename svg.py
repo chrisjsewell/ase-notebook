@@ -4,23 +4,20 @@ import os
 import tempfile
 
 import numpy as np
-from svgwrite import Drawing, shapes, text
+from svgwrite import Drawing, path, shapes, text
 from svgwrite.container import Group
 
 from aiida_2d.visualize.color import Color
 
 
-def generate_svg_elements(element_group):
+def generate_svg_elements(element_group, element_colors=None, background_color="white"):
     """Create the SVG elements, related to the 3D objects.
 
     Parameters
     ----------
     element_group : aiida_2d.visualize.core.DrawGroup
         Container of all element groups to be created.
-    lighten_by_depth : float
-        Fraction (0 to 1) by which to lighten atom colors,
-        based on their fractional distance along the line from the
-        maximum to minimum z-coordinate of all elements
+    background_color : str
 
     Returns
     -------
@@ -34,16 +31,64 @@ def generate_svg_elements(element_group):
             if not element.get("visible", True):
                 continue
 
-            svg_elements.append(
-                shapes.Circle(
-                    element.position[:2],
-                    r=element.sradius,
-                    fill=element.color,
-                    fill_opacity=element.get("fill_opacity", 0.95),
-                    stroke=element.get("stroke", "black"),
-                    stroke_width=element.get("stroke_width", 1),
+            if element.occupancy is not None:
+                from ase.data import atomic_numbers
+
+                if (np.sum([o for o in element.occupancy.values()])) < 1.0:
+                    # first draw an empty circle if a site is not fully occupied
+                    svg_elements.append(
+                        shapes.Circle(
+                            element.position[:2],
+                            r=element.sradius,
+                            fill=background_color,
+                            fill_opacity=element.get("fill_opacity", 0.95),
+                            stroke=element.get("stroke", "black"),
+                            stroke_width=element.get("stroke_width", 1),
+                        )
+                    )
+                angle_start = 0
+                # start with the dominant species
+                for sym, occ in sorted(
+                    element.occupancy.items(), key=lambda x: x[1], reverse=True
+                ):
+                    if np.round(occ, decimals=4) == 1.0:
+                        svg_elements.append(
+                            shapes.Circle(
+                                element.position[:2],
+                                r=element.sradius,
+                                fill=element_colors[atomic_numbers[sym]],
+                                fill_opacity=element.get("fill_opacity", 0.95),
+                                stroke=element.get("stroke", "black"),
+                                stroke_width=element.get("stroke_width", 1),
+                            )
+                        )
+                    else:
+                        angle_extent = 360.0 * occ
+                        svg_elements.append(
+                            create_arc_element(
+                                element.position[:2],
+                                angle_start,
+                                angle_start + angle_extent,
+                                element.sradius,
+                                fill=element_colors[atomic_numbers[sym]],
+                                fill_opacity=element.get("fill_opacity", 0.95),
+                                stroke=element.get("stroke", "black"),
+                                stroke_width=element.get("stroke_width", 1),
+                            )
+                        )
+                        angle_start += angle_extent
+            else:
+                svg_elements.append(
+                    shapes.Circle(
+                        element.position[:2],
+                        r=element.sradius,
+                        fill=element.color,
+                        fill_opacity=element.get("fill_opacity", 0.95),
+                        stroke=element.get("stroke", "black"),
+                        stroke_width=element.get("stroke_width", 1),
+                    )
                 )
-            )
+
             if "label" in element and element.label is not None:
                 svg_elements.append(
                     text.Text(
@@ -53,6 +98,7 @@ def generate_svg_elements(element_group):
                         text_anchor="middle",
                         dominant_baseline="middle",
                         font_size=element.get("font_size", 20),
+                        fill=element.get("font_color", "black"),
                     )
                 )
         if element.name == "cell_lines":
@@ -108,6 +154,64 @@ def generate_svg_elements(element_group):
                 )
             )
     return svg_elements
+
+
+def cart2polar(x, y):
+    """Convert cartesian to polar coordinates."""
+    rho = np.sqrt(x ** 2 + y ** 2)
+    phi = np.arctan2(y, x)
+    return (rho, np.rad2deg(phi))
+
+
+def polar2cart(radius, angle):
+    """Convert polar to cartesian coordinates."""
+    x = radius * np.cos(np.radians(angle))
+    y = radius * np.sin(np.radians(angle))
+    return (x, y)
+
+
+def create_arc_element(center, start, end, radius, **kwargs):
+    """Create an arc (circle section) path element.
+
+    Parameters
+    ----------
+    center: tuple
+        (x, y)
+    start: float
+        starting angle from x axis (in degrees)
+    end: float
+        final angle from x axis (in degrees)
+    radius: float
+
+    Returns
+    -------
+    svgwrite.path.Path
+
+    """
+    c = np.array(center)
+    p1 = np.array(polar2cart(radius, start)) + c
+    p2 = np.array(polar2cart(radius, end)) + c
+
+    l1 = p1 - c
+    l2 = p2 - p1
+    l3 = c - p2
+
+    if start < end:
+        angle_dir = 1
+        large_arc = 1 if end - start >= 180 else 0
+    else:
+        angle_dir = 0
+        large_arc = 1 if start - end >= 180 else 0
+
+    return path.Path(
+        [
+            f"m{c[0]},{c[1]}",
+            f"l{l1[0]},{l1[1]}",
+            f"a{radius},{radius},{0},{large_arc},{angle_dir},{l2[0]},{l2[1]}",
+            f"l{l3[0]},{l3[1]}",
+        ],
+        **kwargs,
+    )
 
 
 def create_axes_elements(

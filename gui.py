@@ -32,7 +32,6 @@ def get_default_settings(overrides=None):
         "force_vector_scale": 1.0,
         "velocity_vector_scale": 1.0,
         "show_unit_cell": True,
-        "unit_cell_segmentation": None,
         "show_axes": True,
         "show_bonds": False,
         "show_millers": True,
@@ -40,14 +39,16 @@ def get_default_settings(overrides=None):
         "swap_mouse": False,
         "atom_lighten_by_depth": 0.0,
         "atom_stroke_width": 1,
+        "atom_font_color": "black",
+        "atom_font_size": 14,
         "uc_color": "black",
+        "uc_segments": None,
         "ghost_display": True,
         "ghost_cross": False,
         "ghost_label": False,
         "ghost_lighten": 0.0,
         "ghost_stroke_width": 0,
         "ghost_opacity": 0.4,
-        # TODO a number of the ghost options aren't actually utilised
         "axes_length": 15,
         "axes_font_size": 14,
         "axes_line_color": "black",
@@ -196,8 +197,8 @@ class AtomGui(GUI):
         elements = initialise_element_groups(
             atoms,
             atom_radii=self.get_covalent_radii(),
-            show_uc=self.showing_cell(),
-            uc_segments=self.config["unit_cell_segmentation"],
+            show_unit_cell=self.showing_cell(),
+            uc_segments=self.config["uc_segments"],
             show_bonds=self.showing_bonds(),
             bond_supercell=self.images.repeat,
             miller_planes=self.get_miller_planes() if self.showing_millers() else None,
@@ -279,6 +280,8 @@ class AtomGui(GUI):
                 .astype(int)
             )
 
+        # TODO use occuapancy keys for label, if showing symbol
+
         element_groups["atoms"].set_property_many(
             {
                 "lbound": (
@@ -316,6 +319,13 @@ class AtomGui(GUI):
                 ],
             },
             element=True,
+        )
+        element_groups["atoms"].set_property_many(
+            {
+                "font_size": self.config["atom_font_size"],
+                "font_color": self.config["atom_font_color"],
+            },
+            element=False,
         )
         element_groups["cell_lines"].set_property_many(
             {"color": self.config["uc_color"]}, element=False
@@ -363,6 +373,7 @@ class AtomGui(GUI):
             scale=self.scale,
             element_colors=self.colors,
             ghost_cross=self.config["ghost_cross"],
+            background_color=self.config["gui_background_color"],
         )
 
         if self.window["toggle-show-axes"]:
@@ -403,14 +414,17 @@ def draw_arrow(canvas, coords, width, scale):
     canvas.create_line(x2, y2, int(end[0]), int(end[1]), width)
 
 
-def draw_circle(canvas, color, selected, bbox, tags=(), stroke_width=1):
-    """Draw a circle element."""
+def draw_circle(lbound, diameter, canvas, color, selected, tags=(), stroke_width=1):
+    """Draw a circle element, given a lower bound and diameter."""
     if selected:
         outline = "#004500"
         width = stroke_width * 3
     else:
         outline = "black"
         width = stroke_width
+
+    bbox = (lbound[0], lbound[1], lbound[0] + diameter, lbound[1] + diameter)
+
     canvas.create_oval(
         *tuple(int(x) for x in bbox),
         fill=color,
@@ -420,7 +434,7 @@ def draw_circle(canvas, color, selected, bbox, tags=(), stroke_width=1):
     )
 
 
-def draw_arc(canvas, color, selected, start, extent, *bbox):
+def draw_arc(lbound, diameter, canvas, color, selected, start, extent):
     """Draw an arc element."""
     if selected:
         outline = "#004500"
@@ -428,6 +442,7 @@ def draw_arc(canvas, color, selected, start, extent, *bbox):
     else:
         outline = "black"
         width = 1
+    bbox = (lbound[0], lbound[1], lbound[0] + diameter, lbound[1] + diameter)
     canvas.create_arc(
         *tuple(int(x) for x in bbox),
         start=start,
@@ -477,6 +492,7 @@ def draw_elements(
     element_colors,
     ghost_cross=False,
     movecolor=None,
+    background_color="#ffffff",
 ):
     """Draw elements on a ``tkinter.Canvas``.
 
@@ -495,6 +511,8 @@ def draw_elements(
         whether to cross out ghost atoms
     movecolor : str or None
         color for moving atom
+    background_color : str or None
+        color used for coloring partial atom occupancies
 
     """
     for idx, element in element_groups.yield_zorder():
@@ -505,19 +523,14 @@ def draw_elements(
 
             diameter = int(round(element.sradius * 2))
             if element.occupancy is not None:
-                # first an empty circle if a site is not fully occupied
+                # first draw an empty circle if a site is not fully occupied
                 if (np.sum([o for o in element.occupancy.values()])) < 1.0:
-                    fill = "#ffffff"
                     draw_circle(
+                        element.lbound,
+                        diameter,
                         canvas,
-                        fill,
+                        background_color,
                         element.selected,
-                        (
-                            element.lbound[0],
-                            element.lbound[1],
-                            element.lbound[0] + diameter,
-                            element.lbound[1] + diameter,
-                        ),
                         stroke_width=element.stroke_width,
                     )
                 start = 0
@@ -527,15 +540,11 @@ def draw_elements(
                 ):
                     if np.round(occ, decimals=4) == 1.0:
                         draw_circle(
+                            element.lbound,
+                            diameter,
                             canvas,
-                            element.color,
+                            element_colors[atomic_numbers[sym]],
                             element.selected,
-                            (
-                                element.lbound[0],
-                                element.lbound[1],
-                                element.lbound[0] + diameter,
-                                element.lbound[1] + diameter,
-                            ),
                             stroke_width=element.stroke_width,
                             tags=("atom-circle",),
                         )
@@ -543,40 +552,30 @@ def draw_elements(
                         # TODO alter for ghost
                         extent = 360.0 * occ
                         draw_arc(
+                            element.lbound,
+                            diameter,
                             canvas,
                             element_colors[atomic_numbers[sym]],
                             element.selected,
                             start,
                             extent,
-                            element.lbound[0],
-                            element.lbound[1],
-                            element.lbound[0] + diameter,
-                            element.lbound[1] + diameter,
                         )
                         start += extent
             else:
                 if element.moving:
                     draw_circle(
+                        (element.lbound[0] - 4, element.lbound[1] - 4),
+                        diameter + 8,
                         canvas,
                         movecolor,
                         False,
-                        (
-                            element.lbound[0] - 4,
-                            element.lbound[1] - 4,
-                            element.lbound[0] + diameter + 4,
-                            element.lbound[1] + diameter + 4,
-                        ),
                     )
                 draw_circle(
+                    element.lbound,
+                    diameter,
                     canvas,
                     element.color,
                     element.selected,
-                    (
-                        element.lbound[0],
-                        element.lbound[1],
-                        element.lbound[0] + diameter,
-                        element.lbound[1] + diameter,
-                    ),
                     stroke_width=element.stroke_width,
                     tags=("atom-circle",),
                 )
@@ -588,7 +587,8 @@ def draw_elements(
                         element.lbound[1] + diameter / 2,
                     ),
                     text=str(element.label),
-                    fill="black",
+                    fill=element.font_color,
+                    font=Font(size=element.font_size),
                     anchor=tkinter.CENTER,
                 )
 

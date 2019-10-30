@@ -526,7 +526,7 @@ class DrawGroup(Mapping):
 def initialise_element_groups(
     atoms,
     atom_radii,
-    show_uc=True,
+    show_unit_cell=True,
     uc_segments=None,
     show_bonds=False,
     bond_supercell=(1, 1, 1),
@@ -539,7 +539,7 @@ def initialise_element_groups(
     atoms : ase.Atoms
     atom_radii : list or None
         mapping of atom index to atomic radii
-    show_uc : bool
+    show_unit_cell : bool
         show the unit cell
     uc_segments : float or None
         split unit cell lines into maximum length segments (improves z-order)
@@ -557,7 +557,7 @@ def initialise_element_groups(
     all_coordinates: numpy.array
 
     """
-    if show_uc:
+    if show_unit_cell:
         cvec_starts, cvec_ends = get_cell_coordinates(
             atoms.cell,
             show_repeats=atoms.info.get("unit_cell_repeat", None),

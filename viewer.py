@@ -97,6 +97,7 @@ class ViewConfig:
         validator=in_(("element", "index", "tag", "magmom", "charge")),
     )
     atom_font_size: int = attr.ib(default=14, validator=is_positive_number)
+    atom_font_color: int = attr.ib(default="black", validator=is_html_color)
     atom_stroke_width: float = attr.ib(default=1.0, validator=is_positive_number)
     atom_color_by: str = attr.ib(default="element", validator=instance_of(str))
     atom_colormap: str = attr.ib(default="jet", validator=instance_of(str))
@@ -104,12 +105,15 @@ class ViewConfig:
         default=(None, None), validator=instance_of((list, tuple))
     )
     atom_lighten_by_depth: float = attr.ib(default=0.0, validator=is_positive_number)
+    # Fraction (0 to 1) by which to lighten atom colors,
+    # based on their fractional distance along the line from the
+    # maximum to minimum z-coordinate of all elements
     atom_opacity: float = attr.ib(default=0.95, validator=is_positive_number)
     ghost_stroke_width: float = attr.ib(default=0.0, validator=is_positive_number)
     ghost_lighten: float = attr.ib(default=0.0, validator=is_positive_number)
     ghost_opacity: float = attr.ib(default=0.4, validator=is_positive_number)
     ghost_show_label: bool = attr.ib(default=False, validator=instance_of(bool))
-    show_uc: bool = attr.ib(default=True, validator=instance_of(bool))
+    show_unit_cell: bool = attr.ib(default=True, validator=instance_of(bool))
     show_uc_repeats: Union[bool, list] = attr.ib(
         default=False, validator=instance_of((bool, list, tuple))
     )
@@ -280,6 +284,11 @@ class AseView:
     def get_atom_labels(self, atoms):
         """Return mapping of atom index to text label."""
         if self.config.atom_label_by == "element":
+            if "occupancy" in atoms.info:
+                return [
+                    ",".join(atoms.info["occupancy"][t].keys())
+                    for t in atoms.get_tags()
+                ]
             return atoms.get_chemical_symbols()
         if self.config.atom_label_by == "index":
             return list(range(len(atoms)))
@@ -347,7 +356,7 @@ class AseView:
         element_groups = initialise_element_groups(
             atoms,
             atom_radii,
-            show_uc=config.show_uc,
+            show_unit_cell=config.show_unit_cell,
             uc_segments=config.uc_segments,
             show_bonds=config.show_bonds,
             miller_planes=config.miller_planes if config.show_miller_planes else None,
@@ -391,6 +400,10 @@ class AseView:
                     config.ghost_opacity if g else config.atom_opacity
                     for g in ghost_atoms
                 ],
+                "occupancy": [
+                    atoms.info["occupancy"][t] if "occupancy" in atoms.info else None
+                    for t in atoms.get_tags()
+                ],
                 "stroke_width": [
                     config.ghost_stroke_width if g else config.atom_stroke_width
                     for g in ghost_atoms
@@ -399,7 +412,8 @@ class AseView:
             element=True,
         )
         element_groups["atoms"].set_property_many(
-            {"font_size": config.atom_font_size}, element=False
+            {"font_size": config.atom_font_size, "font_color": config.atom_font_color},
+            element=False,
         )
         element_groups["cell_lines"].set_property_many(
             {"color": config.uc_color}, element=False
@@ -446,7 +460,11 @@ class AseView:
         atoms, element_groups, rotation_matrix, scale = self._prepare_elements(
             atoms, center_in_uc=center_in_uc, repeat_uc=repeat_uc
         )
-        svg_elements = generate_svg_elements(element_groups)
+        svg_elements = generate_svg_elements(
+            element_groups,
+            element_colors=self.get_element_colors(),
+            background_color=config.canvas_color_background,
+        )
 
         if config.canvas_crop:
             left, right, top, bottom = config.canvas_crop
@@ -514,15 +532,17 @@ class AseView:
             "radii_scale": config.radii_scale,
             "force_vector_scale": 1.0,
             "velocity_vector_scale": 1.0,
-            "show_unit_cell": config.show_uc,
-            "unit_cell_segmentation": config.uc_segments,
+            "show_unit_cell": config.show_unit_cell,
+            "uc_segments": config.uc_segments,
+            "uc_color": config.uc_color,
             "show_axes": config.show_axes,
             "show_bonds": config.show_bonds,
             "show_millers": config.show_miller_planes,
             "swap_mouse": False,
             "atom_stroke_width": config.atom_stroke_width,
             "atom_lighten_by_depth": config.atom_lighten_by_depth,
-            "uc_color": config.uc_color,
+            "atom_font_color": config.atom_font_color,
+            "atom_font_size": config.atom_font_size,
             "ghost_display": True,
             "ghost_cross": False,  # TODO make option
             "ghost_label": config.ghost_show_label,
