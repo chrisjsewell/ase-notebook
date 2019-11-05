@@ -424,7 +424,9 @@ class AseView:
             "color",
             [
                 (atom_colors[i], atom_colors[j])
-                for i, j in element_groups["bond_lines"].get_property("atom_index")
+                for i, j in element_groups["bond_lines"].get_elements_property(
+                    "atom_index"
+                )
             ],
             element=True,
         )
@@ -437,11 +439,15 @@ class AseView:
                 {
                     "color": [
                         config.miller_planes[i].get("color", "blue")
-                        for i in element_groups[miller_type].get_property("index")
+                        for i in element_groups[miller_type].get_elements_property(
+                            "index"
+                        )
                     ],
                     "stroke_width": [
                         config.miller_planes[i].get("stroke_width", 1)
-                        for i in element_groups[miller_type].get_property("index")
+                        for i in element_groups[miller_type].get_elements_property(
+                            "index"
+                        )
                     ],
                 },
                 element=True,
@@ -568,12 +574,21 @@ AseView.__init__.__doc__ = (
 )
 
 
-def _launch_gui_exec():
-    """Launch a GUI, with json data parsed from stdin."""
-    if sys.stdin.isatty():
-        raise IOError("stdin is empty")
-    data_str = sys.stdin.read()
-    data = json.loads(data_str)
+def _launch_gui_exec(json_string=None):
+    """Launch a GUI, with a json string as input.
+
+    Parameters
+    ----------
+    json_string : str or None
+        A json string containing all data required for running AseView.makegui.
+        If None, the string is read from ``stdin``.
+
+    """
+    if json_string is None:
+        if sys.stdin.isatty():
+            raise IOError("stdin is empty")
+        json_string = sys.stdin.read()
+    data = json.loads(json_string)
     structure_dict = data.pop("structure", {})
     config_dict = data.pop("config", {})
     kwargs = data.pop("kwargs", {})

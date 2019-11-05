@@ -1,6 +1,7 @@
 """Implementation agnostics visualisation functions."""
 from collections import namedtuple, OrderedDict
 from collections.abc import Mapping
+from copy import deepcopy
 from itertools import product
 from math import ceil, cos, radians, sin
 from typing import List
@@ -263,6 +264,18 @@ class DrawElementsBase:
         for key, val in (group_properties or {}).items():
             self.set_property(key, val, element=False)
 
+    @property
+    def element_properties(self):
+        """Return per element properties."""
+        output = deepcopy(self._el_props)
+        output["positions"] = np.array(self._positions)
+        return output
+
+    @property
+    def group_properties(self):
+        """Return element group properties."""
+        return deepcopy(self._grp_props)
+
     def set_property(self, name, value, element=False):
         """Set a group or per element property."""
         if name in self._protected_keys:
@@ -284,13 +297,15 @@ class DrawElementsBase:
         for key, val in properties.items():
             self.set_property(key, val, element=element)
 
-    def get_property(self, name):
+    def get_elements_property(self, name):
         """Return a single property."""
+        if name == "position":
+            return np.array(self._positions)
         if name in self._el_props:
-            return self._el_props[name]
+            return [i for i in self._el_props[name]]
         if name in self._grp_props:
             return [self._grp_props[name] for _ in range(len(self))]
-        raise KeyError(f"{name} no tin properties")
+        raise KeyError(f"{name} not in properties")
 
     def __len__(self):
         """Return the number of elements."""
@@ -328,6 +343,10 @@ class DrawElementsBase:
     def update_positions(self, axes, offset, scale):
         """Update element positions, give a axes basis and centre offset."""
         raise NotImplementedError
+
+    def reset_positions(self):
+        """Reset element positions."""
+        self.update_positions(np.identity(3), np.zeros(3), scale=1)
 
     def get_max_zposition(self):
         """Return the maximum z-coordinate."""

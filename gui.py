@@ -288,7 +288,9 @@ class AtomGui(GUI):
             "color",
             [
                 (atom_colors[i], atom_colors[j])
-                for i, j in element_groups["bond_lines"].get_property("atom_index")
+                for i, j in element_groups["bond_lines"].get_elements_property(
+                    "atom_index"
+                )
             ],
             element=True,
         )
@@ -300,11 +302,15 @@ class AtomGui(GUI):
                 {
                     "color": [
                         self.config["miller_planes"][i].get("color", "blue")
-                        for i in element_groups[miller_type].get_property("index")
+                        for i in element_groups[miller_type].get_elements_property(
+                            "index"
+                        )
                     ],
                     "stroke_width": [
                         self.config["miller_planes"][i].get("stroke_width", 1)
-                        for i in element_groups[miller_type].get_property("index")
+                        for i in element_groups[miller_type].get_elements_property(
+                            "index"
+                        )
                     ],
                 },
                 element=True,
