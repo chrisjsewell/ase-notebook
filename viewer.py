@@ -28,7 +28,7 @@ from aiida_2d.visualize.svg import (
     create_svg_document,
     generate_svg_elements,
 )
-from aiida_2d.visualize.three import generate_3js_render
+from aiida_2d.visualize.three import create_world_axes, generate_3js_render
 
 
 def is_positive_number(self, attribute, value):
@@ -361,7 +361,23 @@ class AseView:
                 else config.show_uc_repeats
             )
 
-        atom_radii = self.get_atom_radii(atoms)
+        element_groups = initialise_element_groups(
+            atoms,
+            atom_radii=self.get_atom_radii(atoms),
+            show_unit_cell=config.show_unit_cell,
+            uc_dash_pattern=config.uc_dash_pattern,
+            show_bonds=config.show_bonds,
+            miller_planes=config.miller_planes if config.show_miller_planes else None,
+        )
+
+        return atoms, element_groups
+
+    def _add_element_properties(
+        self, atoms, element_groups, bond_thickness, lighten_by_depth=True
+    ):
+        """Add initial properties to the element groups."""
+        config = self._config
+
         atom_colors = self.get_atom_colors(atoms)
         atom_labels = self.get_atom_labels(atoms)
         ghost_atoms = (
@@ -370,30 +386,7 @@ class AseView:
             else [False for _ in atoms]
         )
 
-        element_groups = initialise_element_groups(
-            atoms,
-            atom_radii,
-            show_unit_cell=config.show_unit_cell,
-            uc_dash_pattern=config.uc_dash_pattern,
-            show_bonds=config.show_bonds,
-            miller_planes=config.miller_planes if config.show_miller_planes else None,
-        )
-
-        rotation_matrix = get_rotation_matrix(config.rotations)
-
-        center, scale = compute_projection(
-            element_groups, config.canvas_size, rotation_matrix
-        )
-        scale *= config.zoom
-
-        axes = scale * rotation_matrix * (1, -1, 1)
-        offset = np.dot(center, axes)
-        offset[:2] -= 0.5 * np.array(config.canvas_size)
-        element_groups.update_positions(
-            axes, offset, radii_scale=scale * 0.65 if config.show_bonds else scale
-        )
-
-        if config.atom_lighten_by_depth:
+        if config.atom_lighten_by_depth and lighten_by_depth:
             z_positions = element_groups["atoms"].get_max_zposition()
             zmin, zmax = z_positions.min(), z_positions.max()
             new_atom_colors = []
@@ -446,7 +439,7 @@ class AseView:
             element=True,
         )
         element_groups["bond_lines"].set_property_many(
-            {"stroke_width": scale * 0.15, "stroke_opacity": config.bond_opacity},
+            {"stroke_width": bond_thickness, "stroke_opacity": config.bond_opacity},
             element=False,
         )
         for miller_type in ["miller_lines", "miller_planes"]:
@@ -475,14 +468,28 @@ class AseView:
                 element=False,
             )
 
-        return atoms, element_groups, rotation_matrix, scale
-
     def make_svg(self, atoms, center_in_uc=False, repeat_uc=(1, 1, 1)):
         """Create an SVG of the atoms or structure."""
         config = self.config
-        atoms, element_groups, rotation_matrix, scale = self._initialise_elements(
+        atoms, element_groups = self._initialise_elements(
             atoms, center_in_uc=center_in_uc, repeat_uc=repeat_uc
         )
+
+        rotation_matrix = get_rotation_matrix(config.rotations)
+
+        center, scale = compute_projection(
+            element_groups, config.canvas_size, rotation_matrix
+        )
+        scale *= config.zoom
+        axes = scale * rotation_matrix * (1, -1, 1)
+        offset = np.dot(center, axes)
+        offset[:2] -= 0.5 * np.array(config.canvas_size)
+        element_groups.update_positions(
+            axes, offset, radii_scale=scale * 0.65 if config.show_bonds else scale
+        )
+
+        self._add_element_properties(atoms, element_groups, bond_thickness=scale * 0.15)
+
         svg_elements = generate_svg_elements(
             element_groups,
             element_colors=self.get_element_colors(),
@@ -530,7 +537,7 @@ class AseView:
         launch=True,
     ):
         """Launch a (blocking) GUI to view the atoms or structure."""
-        atoms, element_groups, rotation_matrix, scale = self._initialise_elements(
+        atoms, element_groups = self._initialise_elements(
             atoms, center_in_uc=center_in_uc, repeat_uc=repeat_uc
         )
 
@@ -585,16 +592,36 @@ class AseView:
     def make_render(self, atoms, center_in_uc=False, repeat_uc=(1, 1, 1)):
         """Create a pythreejs render of the atoms or structure."""
         config = self.config
-        atoms, element_groups, rotation_matrix, scale = self._initialise_elements(
+        atoms, element_groups = self._initialise_elements(
             atoms, center_in_uc=center_in_uc, repeat_uc=repeat_uc
         )
-        return generate_3js_render(
-            element_groups,
-            rotation_matrix,
-            0.65 if config.show_bonds else 1.0,
-            config.canvas_size,
-            config.zoom,
+        rotation_matrix = get_rotation_matrix(config.rotations) * (-1, 1, -1)
+        element_groups.update_positions(axes=rotation_matrix)
+
+        pos_min, pos_max = element_groups.get_position_range()
+
+        element_groups.update_positions(
+            axes=rotation_matrix,
+            offset=pos_min + (pos_max - pos_min) / 2,
+            radii_scale=0.65 if config.show_bonds else 1.0,
         )
+
+        self._add_element_properties(
+            atoms, element_groups, bond_thickness=5, lighten_by_depth=False
+        )
+
+        renderer = generate_3js_render(
+            element_groups, canvas_size=config.canvas_size, zoom=config.zoom
+        )
+        if config.show_axes:
+            import ipywidgets
+
+            ax_renderer = create_world_axes(
+                renderer.camera, renderer.controls[0], initial_rotation=rotation_matrix
+            )
+            renderer = ipywidgets.HBox([renderer, ax_renderer])
+
+        return renderer
 
 
 AseView.__init__.__doc__ = (
