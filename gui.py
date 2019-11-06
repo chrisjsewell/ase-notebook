@@ -151,7 +151,7 @@ class AtomGui(GUI):
             atoms,
             atom_radii=self.get_covalent_radii(),
             show_unit_cell=self.showing_cell(),
-            uc_segments=self.config["uc_segments"],
+            uc_dash_pattern=self.config["uc_dash_pattern"],
             show_bonds=self.showing_bonds(),
             bond_supercell=self.images.repeat,
             miller_planes=self.config["miller_planes"]
@@ -184,10 +184,13 @@ class AtomGui(GUI):
         offset[:2] -= 0.5 * self.window.size
 
         element_groups = self.elements
-        element_groups.update_positions(axes, offset, self.scale)
-
-        if self.window["toggle-show-bonds"]:
-            element_groups["atoms"]._scale *= 0.65  # TODO accessing protected attribute
+        element_groups.update_positions(
+            axes,
+            offset,
+            radii_scale=self.scale * 0.65
+            if self.window["toggle-show-bonds"]
+            else self.scale,
+        )
 
         # required by View.release
         self.P = element_groups["atoms"].unstack_positions()[:, :2].round().astype(int)
@@ -596,7 +599,7 @@ def draw_elements(
                 ),
                 fill=element.color,
                 width=1,
-                dash=(6, 4),  # dash pattern = (line length, gap length, ..)
+                # dash=(6, 4),  # dash pattern = (line length, gap length, ..)
                 tags=("cell-line",),
             )
 

@@ -109,7 +109,7 @@ def generate_svg_elements(element_group, element_colors=None, background_color="
                     element.position[0][:2],
                     element.position[1][:2],
                     stroke=element.get("color", "black"),
-                    stroke_dasharray=f"{element.get('dashed', '6,4')}",
+                    # stroke_dasharray=f"{element.get('dashed', '6,4')}",
                 )
             )
         if element.name == "bond_lines":

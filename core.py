@@ -54,7 +54,7 @@ def get_rotation_matrix(rotations, init_rotation=None):
 
 
 def get_cell_coordinates(
-    cell, origin=(0.0, 0.0, 0.0), show_repeats=None, segment_length=None
+    cell, origin=(0.0, 0.0, 0.0), show_repeats=None, dash_pattern=None
 ):
     """Get start and end points of lines segments used to draw unit cells.
 
@@ -118,16 +118,26 @@ def get_cell_coordinates(
 
     lines = np.array(lines, dtype=float)
 
-    if segment_length:
-        # split lines into segments (to 'improve' the z-order of lines)
+    if dash_pattern:
+        # split lines into a dash pattern
+        dlength, dgap = dash_pattern
         new_lines = []
         for (start, end) in lines:
-            length = np.linalg.norm(end - start)
-            segments = int(ceil(length / segment_length))
-            for i in range(segments):
-                new_end = start + (end - start) * (i + 1) / segments
-                new_lines.append([start, new_end])
-                start = new_end
+            new_start = start
+            total_length = np.linalg.norm(end - start)
+            dash_fraction = (dlength + dgap) / total_length
+            length_fraction = dlength / total_length
+            ndashes = int(ceil(total_length / (dlength + dgap)))
+            for n in range(ndashes - 1):
+                dash_end = start + (end - start) * (
+                    (dash_fraction * n) + length_fraction
+                )
+                new_lines.append([new_start, dash_end])
+                new_start = start + (end - start) * dash_fraction * (n + 1)
+            # TODO remove last gap fraction (if present)
+            # or, better, start with a fraction of dlength, so start/end are symmetric
+            new_lines.append([new_start, end])
+
         lines = np.array(new_lines, dtype=float)
 
     return lines[:, 0], lines[:, 1]
@@ -255,7 +265,6 @@ class DrawElementsBase:
         self._positions = coordinates
         self._axes = np.identity(3)
         self._offset = np.zeros(3)
-        self._scale = 1
         self._el_props = {}
         self._grp_props = {}
 
@@ -340,13 +349,9 @@ class DrawElementsBase:
         """Return a list of all coordinates in the group."""
         raise NotImplementedError
 
-    def update_positions(self, axes, offset, scale):
+    def update_positions(self, axes, offset, **kwargs):
         """Update element positions, give a axes basis and centre offset."""
         raise NotImplementedError
-
-    def reset_positions(self):
-        """Reset element positions."""
-        self.update_positions(np.identity(3), np.zeros(3), scale=1)
 
     def get_max_zposition(self):
         """Return the maximum z-coordinate."""
@@ -360,7 +365,13 @@ class DrawElementsSphere(DrawElementsBase):
     _protected_keys = ("name", "type", "position", "sradius", "get")
 
     def __init__(
-        self, name, coordinates, radii, element_properties=None, group_properties=None
+        self,
+        name,
+        coordinates,
+        radii,
+        element_properties=None,
+        group_properties=None,
+        radii_scale=1.0,
     ):
         """Initialise the element group."""
         coordinates = np.array(coordinates)
@@ -368,6 +379,7 @@ class DrawElementsSphere(DrawElementsBase):
             coordinates = np.empty((0, 3))
         super().__init__(name, coordinates, element_properties, group_properties)
         self._radii = np.array(radii)
+        self._radii_scale = radii_scale
 
     def __getitem__(self, index):
         """Return a single element."""
@@ -389,7 +401,7 @@ class DrawElementsSphere(DrawElementsBase):
     @property
     def scaled_radii(self):
         """Return the scaled radii, for each sphere."""
-        return self._radii * self._scale
+        return self._radii * self._radii_scale
 
     def unstack_coordinates(self):
         """Return a list of all coordinates in the group."""
@@ -399,12 +411,12 @@ class DrawElementsSphere(DrawElementsBase):
         """Return a list of all coordinates in the group."""
         return self._positions
 
-    def update_positions(self, axes, offset, scale):
+    def update_positions(self, axes, offset, radii_scale, **kwargs):
         """Update element positions, give a axes basis and centre offset."""
         self._positions = np.dot(self._coordinates, axes) - offset
         self._axes = axes
         self._offset = offset
-        self._scale = scale
+        self._radii_scale = radii_scale
 
     def get_max_zposition(self):
         """Return the maximum z-coordinate."""
@@ -433,12 +445,11 @@ class DrawElementsLine(DrawElementsBase):
         """Return a list of all coordinates in the group."""
         return np.concatenate((self._positions[:, 0, :], self._positions[:, 1, :]))
 
-    def update_positions(self, axes, offset, scale):
+    def update_positions(self, axes, offset, **kwargs):
         """Update element positions, give a axes basis and centre offset."""
         self._positions = np.einsum("ijk, km -> ijm", self._coordinates, axes) - offset
         self._axes = axes
         self._offset = offset
-        self._scale = scale
 
     def get_max_zposition(self):
         """Return the maximum z-coordinate."""
@@ -464,13 +475,12 @@ class DrawElementsPoly(DrawElementsBase):
             return np.empty((0, 3))
         return np.concatenate(planes)
 
-    def update_positions(self, axes, offset, scale):
+    def update_positions(self, axes, offset, **kwargs):
         """Update element positions, give a axes basis and centre offset."""
         # TODO ideally would apply transform to all planes at once
         self._positions = [np.dot(plane, axes) - offset for plane in self._coordinates]
         self._axes = axes
         self._offset = offset
-        self._scale = scale
 
     def get_max_zposition(self):
         """Return the maximum z-coordinate."""
@@ -507,14 +517,14 @@ class DrawGroup(Mapping):
         positions = [el.unstack_positions() for el in self._elements.values()]
         return np.concatenate(positions)
 
-    def update_positions(self, axes=None, offset=None, scale=1):
+    def update_positions(self, axes=None, offset=None, radii_scale=1):
         """Update element positions, give a axes basis and centre offset."""
         if axes is None:
             axes = np.identity(3)
         if offset is None:
             offset = np.zeros(3)
         for element in self._elements.values():
-            element.update_positions(axes, offset, scale)
+            element.update_positions(axes, offset, radii_scale=radii_scale)
 
     def get_position_range(self):
         """Return the (minimum, maximum) coordinates."""
@@ -546,7 +556,7 @@ def initialise_element_groups(
     atoms,
     atom_radii,
     show_unit_cell=True,
-    uc_segments=None,
+    uc_dash_pattern=None,
     show_bonds=False,
     bond_supercell=(1, 1, 1),
     miller_planes=None,
@@ -560,8 +570,8 @@ def initialise_element_groups(
         mapping of atom index to atomic radii
     show_unit_cell : bool
         show the unit cell
-    uc_segments : float or None
-        split unit cell lines into maximum length segments (improves z-order)
+    uc_dash_pattern : tuple or None
+        split unit cell lines into dash pattern (line_length, gap_length)
     show_bonds : bool
         show the atomic bonds
     bond_supercell : tuple
@@ -580,7 +590,7 @@ def initialise_element_groups(
         cvec_starts, cvec_ends = get_cell_coordinates(
             atoms.cell,
             show_repeats=atoms.info.get("unit_cell_repeat", None),
-            segment_length=uc_segments,
+            dash_pattern=uc_dash_pattern,
         )
     else:
         cvec_starts = cvec_ends = np.zeros((0, 3))
@@ -609,9 +619,9 @@ def initialise_element_groups(
         ),
         axis=1,
     )
-    el_miller_planes["coordinates"] = np.array(
-        el_miller_planes["coordinates"] or np.zeros((0, 4, 3)), dtype=float
-    )
+    # el_miller_planes["coordinates"] = np.array(
+    #     el_miller_planes["coordinates"] or np.zeros((0, 4, 3)), dtype=float
+    # )
 
     if show_bonds:
         atomscopy = atoms.copy()

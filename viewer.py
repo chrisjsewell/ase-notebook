@@ -28,6 +28,7 @@ from aiida_2d.visualize.svg import (
     create_svg_document,
     generate_svg_elements,
 )
+from aiida_2d.visualize.three import generate_3js_render
 
 
 def is_positive_number(self, attribute, value):
@@ -117,7 +118,7 @@ class ViewConfig:
     show_uc_repeats: Union[bool, list] = attr.ib(
         default=False, validator=instance_of((bool, list, tuple))
     )
-    uc_segments: float = attr.ib(default=None)
+    uc_dash_pattern: Union[None, tuple] = attr.ib(default=None)
     uc_color: str = attr.ib(default="black", validator=is_html_color)
     show_bonds: bool = attr.ib(default=False, validator=instance_of(bool))
     bond_opacity: float = attr.ib(default=0.8, validator=is_positive_number)
@@ -139,6 +140,20 @@ class ViewConfig:
     zoom: float = attr.ib(default=1.0, validator=is_positive_number)
     canvas_crop: Union[list, tuple, None] = attr.ib(default=None)
     gui_swap_mouse: bool = attr.ib(default=False, validator=instance_of(bool))
+
+    @uc_dash_pattern.validator
+    def _validate_uc_dash_pattern(self, attribute, value):
+        """Validate uc_dash_pattern is of form (solid, gap)."""
+        if value is None:
+            return
+        if not isinstance(value, (list, tuple)) or len(value) != 2:
+            raise TypeError(
+                f"'{attribute.name}' must be of the form (line_length, gap_length)."
+            )
+        if value[0] <= 0 or value[1] <= 0:
+            raise TypeError(
+                f"'{attribute.name}' (line_length, gap_length) must have positive lengths."
+            )
 
     @canvas_crop.validator
     def _validate_canvas_crop(self, attribute, value):
@@ -330,7 +345,7 @@ class AseView:
 
         raise TypeError(f"atoms class not recognised: {atoms.__class__}")
 
-    def _prepare_elements(self, atoms, center_in_uc=False, repeat_uc=(1, 1, 1)):
+    def _initialise_elements(self, atoms, center_in_uc=False, repeat_uc=(1, 1, 1)):
         """Prepare visualisation elements, in a backend agnostic manner."""
         config = self._config
 
@@ -359,7 +374,7 @@ class AseView:
             atoms,
             atom_radii,
             show_unit_cell=config.show_unit_cell,
-            uc_segments=config.uc_segments,
+            uc_dash_pattern=config.uc_dash_pattern,
             show_bonds=config.show_bonds,
             miller_planes=config.miller_planes if config.show_miller_planes else None,
         )
@@ -374,9 +389,9 @@ class AseView:
         axes = scale * rotation_matrix * (1, -1, 1)
         offset = np.dot(center, axes)
         offset[:2] -= 0.5 * np.array(config.canvas_size)
-        element_groups.update_positions(axes, offset, scale)
-        if config.show_bonds:
-            element_groups["atoms"]._scale *= 0.65  # TODO accessing protected attribute
+        element_groups.update_positions(
+            axes, offset, radii_scale=scale * 0.65 if config.show_bonds else scale
+        )
 
         if config.atom_lighten_by_depth:
             z_positions = element_groups["atoms"].get_max_zposition()
@@ -465,7 +480,7 @@ class AseView:
     def make_svg(self, atoms, center_in_uc=False, repeat_uc=(1, 1, 1)):
         """Create an SVG of the atoms or structure."""
         config = self.config
-        atoms, element_groups, rotation_matrix, scale = self._prepare_elements(
+        atoms, element_groups, rotation_matrix, scale = self._initialise_elements(
             atoms, center_in_uc=center_in_uc, repeat_uc=repeat_uc
         )
         svg_elements = generate_svg_elements(
@@ -515,7 +530,7 @@ class AseView:
         launch=True,
     ):
         """Launch a (blocking) GUI to view the atoms or structure."""
-        atoms, element_groups, rotation_matrix, scale = self._prepare_elements(
+        atoms, element_groups, rotation_matrix, scale = self._initialise_elements(
             atoms, center_in_uc=center_in_uc, repeat_uc=repeat_uc
         )
 
@@ -566,6 +581,20 @@ class AseView:
         if process.poll():
             raise RuntimeError(process.stderr.read().decode())
         return process
+
+    def make_render(self, atoms, center_in_uc=False, repeat_uc=(1, 1, 1)):
+        """Create a pythreejs render of the atoms or structure."""
+        config = self.config
+        atoms, element_groups, rotation_matrix, scale = self._initialise_elements(
+            atoms, center_in_uc=center_in_uc, repeat_uc=repeat_uc
+        )
+        return generate_3js_render(
+            element_groups,
+            rotation_matrix,
+            0.65 if config.show_bonds else 1.0,
+            config.canvas_size,
+            config.zoom,
+        )
 
 
 AseView.__init__.__doc__ = (
