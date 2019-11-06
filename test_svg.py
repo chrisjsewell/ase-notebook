@@ -41,7 +41,7 @@ def test_make_svg(get_test_structure):
     structure = get_test_structure("pyrite")
     structure.add_site_property("ghost", [True] + [False for _ in structure][1:])
     ase_view = AseView(
-        uc_segments=2,
+        uc_dash_pattern=(0.6, 0.4),
         show_bonds=True,
         element_colors="vesta",
         element_radii="vesta",
@@ -65,7 +65,7 @@ def test_make_svg_occupancies(get_test_structure):
     atoms = AseAtomsAdaptor.get_atoms(structure)
     atoms.info["occupancy"] = {0: {"Fe": 0.75, "S": 0.1, "H": 0.1}}
     ase_view = AseView(
-        uc_segments=2,
+        uc_dash_pattern=(0.6, 0.4),
         show_bonds=True,
         element_colors="vesta",
         element_radii="vesta",
