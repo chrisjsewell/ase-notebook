@@ -6,6 +6,7 @@ import tempfile
 import numpy as np
 from svgwrite import Drawing, path, shapes, text
 from svgwrite.container import Group
+from svgwrite.filters import Filter
 
 
 def generate_svg_elements(element_group, element_colors=None, background_color="white"):
@@ -264,6 +265,46 @@ def create_svg_document(
     """
     dwg = Drawing("ase.svg", profile="tiny", size=size)
     root = Group(id="root")
+    dwg.add(root)
+    # if Color(background_color).web != "white":
+    # apparently the best way, see: https://stackoverflow.com/a/11293812/5033292
+    root.add(
+        shapes.Rect(size=size, fill=background_color, fill_opacity=background_opacity)
+    )
+    for element in elements:
+        root.add(element)
+    if viewbox:
+        dwg.viewbox(*viewbox)
+    return dwg
+
+
+def create_svg_document_with_light(
+    elements, size, viewbox=None, background_color="white", background_opacity=1.0
+):
+    """Create the full SVG document, with a lighting filter.
+
+    Resources:
+
+    - https://www.w3.org/TR/SVG11/filters.html#LightSourceDefinitions
+    - https://svgwrite.readthedocs.io/en/master/classes/filters.html
+    - http://www.svgbasics.com/filters2.html
+    - https://css-tricks.com/look-svg-light-source-filters/
+
+    :param viewbox: (minx, miny, width, height)
+    """
+    # TODO work in progress
+    # TODO have a look at how threejs is converted to SVG:
+    # https://github.com/mrdoob/three.js/blob/master/examples/jsm/renderers/SVGRenderer.js
+    dwg = Drawing("ase.svg", profile="full", size=size)
+
+    light_filter = dwg.defs.add(Filter(size=("100%", "100%")))
+    diffuse_lighting = light_filter.feDiffuseLighting(
+        size=size, surfaceScale=10, diffuseConstant=1, kernelUnitLength=1, color="white"
+    )
+    diffuse_lighting.fePointLight(source=(size[0], 0, 1000))
+    light_filter.feComposite(operator="arithmetic", k1=1)
+
+    root = Group(id="root", filter=light_filter.get_funciri())
     dwg.add(root)
     # if Color(background_color).web != "white":
     # apparently the best way, see: https://stackoverflow.com/a/11293812/5033292
