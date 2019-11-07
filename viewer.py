@@ -672,7 +672,7 @@ class AseView:
         atoms, element_groups = self._initialise_elements(
             atoms, center_in_uc=center_in_uc, repeat_uc=repeat_uc
         )
-        rotation_matrix = get_rotation_matrix(config.rotations) * (-1, 1, -1)
+        rotation_matrix = get_rotation_matrix(config.rotations)
         element_groups.update_positions(axes=rotation_matrix)
 
         pos_min, pos_max = element_groups.get_position_range()

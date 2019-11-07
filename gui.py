@@ -130,6 +130,14 @@ class AtomGui(GUI):
 
         super().release(event)
 
+    def move(self, event):
+        """Handle move event."""
+        # fix an error raised in GUI class
+        if self.xy is None:
+            self.xy = (event.x, event.y)
+
+        super().move(event)
+
     def showing_millers(self):
         """Return whether to display planes."""
         return self.config["show_miller_planes"]
@@ -361,6 +369,7 @@ class AtomGui(GUI):
         self.window.update()
 
         if status:
+            # TODO status fails if an atoms array contains strings
             self.status(self.atoms)
 
 

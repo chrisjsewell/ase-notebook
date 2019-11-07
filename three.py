@@ -65,9 +65,12 @@ def generate_3js_render(
     group_elements = pjs.Group()
     key_elements["group_elements"] = group_elements
 
-    sphere_geom = {}
-    sphere_mat = {}
+    atom_geometry = {}
+    atom_material = {}
     sphere_outline_mat = {}
+
+    key_elements["atom_materials"] = atom_material
+    key_elements["atom_geometries"] = atom_geometry
 
     # label_texture = pjs.TextTexture(string="Fe", color="black")
     # label_material = pjs.MeshLambertMaterial(
@@ -79,17 +82,17 @@ def generate_3js_render(
     group_ghosts = pjs.Group()
     key_elements["group_ghosts"] = group_ghosts
     for el in element_groups["atoms"]:
-        if el.sradius not in sphere_geom:
-            sphere_geom[el.sradius] = pjs.SphereBufferGeometry(
+        if el.sradius not in atom_geometry:
+            atom_geometry[el.sradius] = pjs.SphereBufferGeometry(
                 radius=el.sradius, widthSegments=30, heightSegments=30
             )
         material_hash = (el.color, el.fill_opacity)
-        if material_hash not in sphere_mat:
-            sphere_mat[material_hash] = pjs.MeshLambertMaterial(
+        if material_hash not in atom_material:
+            atom_material[material_hash] = pjs.MeshLambertMaterial(
                 color=el.color, transparent=True, opacity=el.fill_opacity
             )
         mesh = pjs.Mesh(
-            geometry=sphere_geom[el.sradius], material=sphere_mat[material_hash]
+            geometry=atom_geometry[el.sradius], material=atom_material[material_hash]
         )
         mesh.position = el.position.tolist()
         if el.ghost:
@@ -106,7 +109,7 @@ def generate_3js_render(
                     transparent=True,
                 )
             outline_mesh = pjs.Mesh(
-                geometry=sphere_geom[el.sradius],
+                geometry=atom_geometry[el.sradius],
                 material=sphere_outline_mat[outline_hash],
             )
             outline_mesh.position = el.position.tolist()
