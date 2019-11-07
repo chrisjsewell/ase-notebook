@@ -114,12 +114,28 @@ class ViewConfig:
     atom_show_label: bool = attr.ib(default=True, validator=instance_of(bool))
     atom_label_by: str = attr.ib(
         default="element",
-        validator=in_(("element", "index", "tag", "magmom", "charge")),
+        validator=in_(("element", "index", "tag", "magmom", "charge", "array")),
     )
+    atom_label_array: str = attr.ib(default="", validator=instance_of(str))
     atom_font_size: int = attr.ib(default=14, validator=is_positive_number)
     atom_font_color: int = attr.ib(default="black", validator=is_html_color)
     atom_stroke_width: float = attr.ib(default=1.0, validator=is_positive_number)
-    atom_color_by: str = attr.ib(default="element", validator=instance_of(str))
+    atom_color_by: str = attr.ib(
+        default="element",
+        validator=in_(
+            (
+                "element",
+                "index",
+                "tag",
+                "magmom",
+                "charge",
+                "velocity",
+                "color_array",
+                "value_array",
+            )
+        ),
+    )
+    atom_color_array: str = attr.ib(default="", validator=instance_of(str))
     atom_colormap: str = attr.ib(default="jet", validator=instance_of(str))
     atom_colormap_range: Union[list, tuple] = attr.ib(
         default=(None, None), validator=instance_of((list, tuple))
@@ -289,6 +305,8 @@ class AseView:
         if self.config.atom_color_by == "element":
             element_colors = self.get_element_colors()
             return [element_colors[z] for z in atoms.numbers]
+        if self.config.atom_color_by == "color_array":
+            return atoms.get_array(self.config.atom_color_array)
 
         if self.config.atom_color_by == "index":
             values = range(len(atoms))
@@ -300,9 +318,9 @@ class AseView:
             values = atoms.get_initial_charges()
         elif self.config.atom_color_by == "velocity":
             values = (atoms.get_velocities() ** 2).sum(1) ** 0.5
+        elif self.config.atom_color_by == "value_array":
+            values = atoms.get_array(self.config.atom_color_array)
         else:
-            # TODO can color by neighbours
-            # TODO could also color by array atoms.get_array(self.config.atom_color_by)
             raise ValueError(self.config.atom_color_by)
 
         from matplotlib.cm import get_cmap
@@ -340,10 +358,13 @@ class AseView:
             return atoms.get_initial_magnetic_moments()
         if self.config.atom_label_by == "charge":
             return atoms.get_initial_charges()
-        # TODO could also label by array atoms.get_array(self.config.atom_label_by)
+        if self.config.atom_label_by == "array":
+            return atoms.get_array(self.config.atom_label_array)
+
         raise ValueError(self.config.atom_label_by)
 
-    def _convert_atoms(self, atoms, to_structure=False):
+    @staticmethod
+    def convert_atoms(atoms, to_structure=False):
         """Convert ``pymatgen.Structure`` to/from ``ase.Atoms``.
 
         We preserve site properties, by storing them as arrays.
@@ -363,7 +384,7 @@ class AseView:
             for key, array in structure.site_properties.items():
                 if key not in atoms.arrays:
                     atoms.set_array(key, np.array(array))
-            # TODO propogate partial occupancies
+            # TODO propagate partial occupancies
             return atoms
 
         if isinstance(atoms, Structure) and to_structure:
@@ -375,7 +396,7 @@ class AseView:
         """Prepare visualisation elements, in a backend agnostic manner."""
         config = self._config
 
-        atoms = self._convert_atoms(atoms)
+        atoms = self.convert_atoms(atoms)
 
         if center_in_uc:
             atoms.center()
@@ -607,7 +628,7 @@ class AseView:
         :param test_init: wait for a x seconds, then test whether the process initialized without error.
 
         """
-        structure = self._convert_atoms(atoms, to_structure=True)
+        structure = self.convert_atoms(atoms, to_structure=True)
         struct_data = structure.as_dict()
         config_data = self.get_config_as_dict()
         data_str = json.dumps(
