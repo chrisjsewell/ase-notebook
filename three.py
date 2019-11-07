@@ -18,10 +18,8 @@ def generate_3js_render(element_groups, canvas_size, zoom, camera_fov=30):
 
     sphere_geom = {}
     sphere_mat = {}
+    sphere_outline_mat = {}
 
-    outline_material = pjs.MeshBasicMaterial(
-        color="black", side="BackSide", transparent=True
-    )
     # label_texture = pjs.TextTexture(string="Fe", color="black")
     # label_material = pjs.MeshLambertMaterial(
     #     transparent=True, opacity=1.0, map=label_texture
@@ -43,38 +41,66 @@ def generate_3js_render(element_groups, canvas_size, zoom, camera_fov=30):
         mesh.position = el.position.tolist()
         group_elem.add(mesh)
 
-        outline_mesh = pjs.Mesh(
-            geometry=sphere_geom[el.sradius], material=outline_material
-        )
-        outline_mesh.position = el.position.tolist()
-        outline_mesh.scale = (np.array(outline_mesh.scale) * 1.05).tolist()
-        group_elem.add(outline_mesh)
+        if el.get("stroke_width", 1) > 0:
+            outline_hash = (el.get("stroke_color", "black"),)
+            if outline_hash not in sphere_outline_mat:
+                sphere_outline_mat[outline_hash] = pjs.MeshBasicMaterial(
+                    color=el.get("stroke_color", "black"),
+                    side="BackSide",
+                    transparent=True,
+                )
+            outline_mesh = pjs.Mesh(
+                geometry=sphere_geom[el.sradius],
+                material=sphere_outline_mat[outline_hash],
+            )
+            outline_mesh.position = el.position.tolist()
+            # TODO use stroke width
+            outline_mesh.scale = (np.array(outline_mesh.scale) * 1.05).tolist()
+            group_elem.add(outline_mesh)
 
     #     label_mesh = pjs.Mesh(geometry=sphere_geom[el.sradius], material=label_material)
     #     label_mesh.position = el.position.tolist()
     #     group_elem.add(label_mesh)
 
-    cell_line_mat = pjs.LineMaterial(
-        linewidth=1, color=element_groups["cell_lines"].group_properties["color"]
-    )
-    cell_line_geo = pjs.LineSegmentsGeometry(
-        positions=[el.position.tolist() for el in element_groups["cell_lines"]]
-    )
-    cell_lines = pjs.LineSegments2(geometry=cell_line_geo, material=cell_line_mat)
-    group_elem.add(cell_lines)
+    if len(element_groups["cell_lines"]) > 0:
+        cell_line_mat = pjs.LineMaterial(
+            linewidth=1, color=element_groups["cell_lines"].group_properties["color"]
+        )
+        cell_line_geo = pjs.LineSegmentsGeometry(
+            positions=[el.position.tolist() for el in element_groups["cell_lines"]]
+        )
+        cell_lines = pjs.LineSegments2(geometry=cell_line_geo, material=cell_line_mat)
+        group_elem.add(cell_lines)
 
-    bond_line_mat = pjs.LineMaterial(
-        linewidth=element_groups["bond_lines"].group_properties["stroke_width"],
-        vertexColors="VertexColors",
-    )
-    bond_line_geo = pjs.LineSegmentsGeometry(
-        positions=[el.position.tolist() for el in element_groups["bond_lines"]],
-        colors=[
-            [Color(c).rgb for c in el.color] for el in element_groups["bond_lines"]
-        ],
-    )
-    bond_lines = pjs.LineSegments2(geometry=bond_line_geo, material=bond_line_mat)
-    group_elem.add(bond_lines)
+    if len(element_groups["bond_lines"]) > 0:
+        bond_line_mat = pjs.LineMaterial(
+            linewidth=element_groups["bond_lines"].group_properties["stroke_width"],
+            vertexColors="VertexColors",
+        )
+        bond_line_geo = pjs.LineSegmentsGeometry(
+            positions=[el.position.tolist() for el in element_groups["bond_lines"]],
+            colors=[
+                [Color(c).rgb for c in el.color] for el in element_groups["bond_lines"]
+            ],
+        )
+        bond_lines = pjs.LineSegments2(geometry=bond_line_geo, material=bond_line_mat)
+        group_elem.add(bond_lines)
+
+    if len(element_groups["miller_lines"]) > 0:
+        miller_line_mat = pjs.LineMaterial(
+            linewidth=3, vertexColors="VertexColors"  # TODO use stroke_width
+        )
+        miller_line_geo = pjs.LineSegmentsGeometry(
+            positions=[el.position.tolist() for el in element_groups["miller_lines"]],
+            colors=[
+                [Color(el.stroke_color).rgb] * 2
+                for el in element_groups["miller_lines"]
+            ],
+        )
+        miller_lines = pjs.LineSegments2(
+            geometry=miller_line_geo, material=miller_line_mat
+        )
+        group_elem.add(miller_lines)
 
     for el in element_groups["miller_planes"]:
         vertices = el.position.tolist()

@@ -58,7 +58,7 @@ def generate_svg_elements(element_group, element_colors=None, background_color="
                                 r=element.sradius,
                                 fill=element_colors[atomic_numbers[sym]],
                                 fill_opacity=element.get("fill_opacity", 0.95),
-                                stroke=element.get("stroke", "black"),
+                                stroke=element.get("stroke_color", "black"),
                                 stroke_width=element.get("stroke_width", 1),
                             )
                         )
@@ -72,7 +72,7 @@ def generate_svg_elements(element_group, element_colors=None, background_color="
                                 element.sradius,
                                 fill=element_colors[atomic_numbers[sym]],
                                 fill_opacity=element.get("fill_opacity", 0.95),
-                                stroke=element.get("stroke", "black"),
+                                stroke=element.get("stroke_color", "black"),
                                 stroke_width=element.get("stroke_width", 1),
                             )
                         )
@@ -84,7 +84,7 @@ def generate_svg_elements(element_group, element_colors=None, background_color="
                         r=element.sradius,
                         fill=element.color,
                         fill_opacity=element.get("fill_opacity", 0.95),
-                        stroke=element.get("stroke", "black"),
+                        stroke=element.get("stroke_color", "black"),
                         stroke_width=element.get("stroke_width", 1),
                     )
                 )
