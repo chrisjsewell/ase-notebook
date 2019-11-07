@@ -139,7 +139,7 @@ def generate_svg_elements(element_group, element_colors=None, background_color="
                 shapes.Line(
                     element.position[0][:2],
                     element.position[1][:2],
-                    stroke=element.get("color", "blue"),
+                    stroke=element.get("stroke_color", "blue"),
                     stroke_width=element.get("stroke_width", 1),
                     stroke_opacity=element.get("stroke_opacity", 0.8),
                 )
@@ -148,9 +148,9 @@ def generate_svg_elements(element_group, element_colors=None, background_color="
             svg_elements.append(
                 shapes.Polygon(
                     points=element.position[:, :2],
-                    fill=element.get("color", "blue"),
+                    fill=element.get("fill_color", "blue"),
                     fill_opacity=element.get("fill_opacity", 0.5),
-                    stroke=element.get("color", "blue"),
+                    stroke=element.get("stroke_color", "blue"),
                     stroke_width=element.get("stroke_width", 0),
                     stroke_opacity=element.get("stroke_opacity", 0.5),
                 )

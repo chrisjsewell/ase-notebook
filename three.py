@@ -103,7 +103,10 @@ def generate_3js_render(element_groups, canvas_size, zoom, camera_fov=30):
             raise NotImplementedError("polygons with more than 4 points")
         plane_geom = pjs.Geometry(vertices=vertices, faces=faces)
         plane_mat = pjs.MeshBasicMaterial(
-            color=el.color, transparent=True, opacity=el.fill_opacity, side="DoubleSide"
+            color=el.fill_color,
+            transparent=True,
+            opacity=el.fill_opacity,
+            side="DoubleSide",
         )
         plane_mesh = pjs.Mesh(geometry=plane_geom, material=plane_mat)
         group_elem.add(plane_mesh)

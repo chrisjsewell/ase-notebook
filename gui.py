@@ -157,6 +157,7 @@ class AtomGui(GUI):
             miller_planes=self.config["miller_planes"]
             if self.showing_millers()
             else None,
+            miller_planes_as_lines=self.config["miller_as_lines"],
         )
         self.elements = elements
 
@@ -303,8 +304,14 @@ class AtomGui(GUI):
         for miller_type in ["miller_lines", "miller_planes"]:
             element_groups[miller_type].set_property_many(
                 {
-                    "color": [
-                        self.config["miller_planes"][i].get("color", "blue")
+                    "fill_color": [
+                        self.config["miller_planes"][i].get("fill_color", "blue")
+                        for i in element_groups[miller_type].get_elements_property(
+                            "index"
+                        )
+                    ],
+                    "stroke_color": [
+                        self.config["miller_planes"][i].get("stroke_color", "blue")
                         for i in element_groups[miller_type].get_elements_property(
                             "index"
                         )
@@ -642,7 +649,7 @@ def draw_elements(
                     element.position[1, 1] + celldisp[1],
                 ),
                 width=element.stroke_width,
-                fill=element.color,
+                fill=element.stroke_color,
                 tags=("miller-line",),
             )
 
@@ -656,7 +663,7 @@ def draw_elements(
             canvas.create_polygon(
                 plane_pts,
                 width=element.stroke_width,
-                outline=element.color,
-                fill=element.color,
+                outline=element.stroke_color,
+                fill=element.fill_color,
                 tags=("miller-plane",),
             )

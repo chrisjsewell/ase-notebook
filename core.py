@@ -560,6 +560,7 @@ def initialise_element_groups(
     show_bonds=False,
     bond_supercell=(1, 1, 1),
     miller_planes=None,
+    miller_planes_as_lines=False,
 ):
     """Compute (untransformed) coordinates, for elements in the visualisation.
 
@@ -576,9 +577,10 @@ def initialise_element_groups(
         show the atomic bonds
     bond_supercell : tuple
         the supercell of unit cell used for computing bonds
-    miller_planes: list[tuple] or None
-        list of (h, k, l, colour, thickness, as_poly) to project onto the unit cell,
-        e.g. [(1, 0, 0, "blue", 1, True), (2, 2, 2, "green", 3.5, False)].
+    miller_planes: list[dict] or None
+        list of miller planes to project onto the unit cell
+    miller_planes_as_lines: bool
+        whether to create miller planes as a group of lines or a solid plane
 
     Returns
     -------
@@ -603,14 +605,16 @@ def initialise_element_groups(
     if miller_planes is not None:
 
         for i, plane in enumerate(miller_planes):
-            miller_points = get_miller_coordinates(atoms.cell, plane["index"]).tolist()
-            if plane.get("as_poly", False):
-                el_miller_planes["coordinates"].append(miller_points)
-                el_miller_planes["index"].append(i)
-            else:
+            miller_points = get_miller_coordinates(
+                atoms.cell, [plane[n] for n in "hkl"]
+            ).tolist()
+            if miller_planes_as_lines:
                 el_miller_lines["starts"].extend(miller_points)
                 el_miller_lines["ends"].extend(miller_points[1:] + [miller_points[0]])
                 el_miller_lines["index"].extend([i for _ in miller_points])
+            else:
+                el_miller_planes["coordinates"].append(miller_points)
+                el_miller_planes["index"].append(i)
 
     el_miller_lines["coordinates"] = np.stack(
         (

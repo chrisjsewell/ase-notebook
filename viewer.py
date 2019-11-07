@@ -1,18 +1,18 @@
 """A module for creating visualisations of a structure."""
+from collections import Mapping
 import importlib
 import inspect
 import json
 import subprocess
 import sys
 from time import sleep
-from typing import Union
+from typing import Tuple, Union
 
 import ase
 from ase.data import covalent_radii as ase_covalent_radii
 from ase.data.colors import jmol_colors as ase_element_colors
 import attr
 from attr.validators import in_, instance_of
-import jsonschema
 import numpy as np
 
 from aiida_2d.visualize.color import Color, lighten_webcolor
@@ -59,30 +59,52 @@ def is_html_color(self, attribute, value):
         )
 
 
-MILLER_SCHEMA = {
-    "$schema": "http://json-schema.org/draft-07/schema",
-    "type": "array",
-    "items": {
-        "type": "object",
-        "required": ["index"],
-        "properties": {
-            "index": {
-                "type": "array",
-                "minItems": 3,
-                "maxItems": 3,
-                "items": {"type": "number"},
-            },
-            "as_poly": {"type": "boolean"},
-            "stroke_width": {"type": "number", "minimum": 0},
-            "color": {"type": "string"},
-        },
-    },
-}
+@attr.s(slots=True)
+class MillerPlane:
+    """A data class to define a Miller Plane to visualise."""
+
+    h: float = attr.ib(default=0, validator=instance_of((float, int)))
+    k: float = attr.ib(default=0, validator=instance_of((float, int)))
+    l: float = attr.ib(default=0, validator=instance_of((float, int)))
+    fill_color: str = attr.ib(default="red", validator=is_html_color)
+    stroke_color: str = attr.ib(default="red", validator=is_html_color)
+    stroke_width: float = attr.ib(default=1.0, validator=is_positive_number)
+    fill_opacity: float = attr.ib(default=0.5, validator=is_positive_number)
+    stroke_opacity: float = attr.ib(default=0.9, validator=is_positive_number)
+
+    @h.validator
+    def _validate_h(self, attribute, value):
+        if not any([self.h, self.k, self.l]):
+            raise ValueError("at least one of h, k, l must be non-zero")
+
+    @k.validator
+    def _validate_k(self, attribute, value):
+        if not any([self.h, self.k, self.l]):
+            raise ValueError("at least one of h, k, l must be non-zero")
+
+    @l.validator
+    def _validate_l(self, attribute, value):
+        if not any([self.h, self.k, self.l]):
+            raise ValueError("at least one of h, k, l must be non-zero")
+
+
+def convert_to_miller_dicts(iterable):
+    """Convert items in a list to MillerPlane validated dictionaries."""
+    output = []
+    for miller in iterable:
+        if isinstance(miller, MillerPlane):
+            pass
+        elif isinstance(miller, Mapping):
+            miller = MillerPlane(**miller)
+        else:
+            miller = MillerPlane(*miller)
+        output.append(attr.asdict(miller))
+    return tuple(output)
 
 
 @attr.s(kw_only=True)
 class ViewConfig:
-    """Configuration settings for atom visualisations."""
+    """Configuration settings for initialisation of atom visualisations."""
 
     rotations: str = attr.ib(default="", validator=instance_of(str))
     # string format of unit cell rotations '50x,-10y,120z' (note: order matters)
@@ -123,16 +145,15 @@ class ViewConfig:
     show_bonds: bool = attr.ib(default=False, validator=instance_of(bool))
     bond_opacity: float = attr.ib(default=0.8, validator=is_positive_number)
     show_miller_planes: bool = attr.ib(default=True, validator=instance_of(bool))
-    miller_planes: list = attr.ib(
-        default=attr.Factory(list), validator=instance_of(list)
+    miller_planes: Tuple[dict] = attr.ib(
+        default=(), converter=convert_to_miller_dicts, validator=instance_of(tuple)
     )
-    miller_fill_opacity: float = attr.ib(default=0.5, validator=is_positive_number)
-    miller_stroke_opacity: float = attr.ib(default=0.9, validator=is_positive_number)
+    miller_as_lines: bool = attr.ib(default=False, validator=instance_of(bool))
     show_axes: bool = attr.ib(default=True, validator=instance_of(bool))
     axes_length: float = attr.ib(default=15, validator=is_positive_number)
     axes_font_size: int = attr.ib(default=14, validator=is_positive_number)
     axes_line_color: str = attr.ib(default="black", validator=is_html_color)
-    canvas_size: Union[list, tuple] = attr.ib(
+    canvas_size: Tuple[float, float] = attr.ib(
         default=(400, 400), validator=instance_of((list, tuple))
     )
     canvas_color_foreground: str = attr.ib(default="#000000", validator=is_html_color)
@@ -165,20 +186,11 @@ class ViewConfig:
                 f"'{attribute.name}' must be of the form (left, right, top, bottom)."
             )
 
-    @miller_planes.validator
-    def _validate_miller_planes(self, attribute, value):
-        """Validate miller_planes."""
-        try:
-            jsonschema.validate(value, MILLER_SCHEMA)
-        except jsonschema.ValidationError as err:
-            raise TypeError(f"'{attribute.name}' failed validation.") from err
-        for plane in value:
-            if "color" in plane:
-                is_html_color(self, attribute, plane["color"])
-
     def __setattr__(self, key, value):
-        """Add attr validation when setting attributes."""
-        x_attr = getattr(attr.fields(self.__class__), key)
+        """Add attr conversion and validation when setting attributes."""
+        x_attr = getattr(attr.fields(self.__class__), key)  # type: attr.Attribute
+        if x_attr.converter:
+            value = x_attr.converter(value)
         if x_attr.validator:
             x_attr.validator(self, x_attr, value)
         super().__setattr__(key, value)
@@ -204,19 +216,29 @@ class AseView:
         return attr.asdict(self._config)
 
     def add_miller_plane(
-        self, h, k, l, *, as_poly=False, color="blue", stroke_width=1, reset=False
+        self,
+        h,
+        k,
+        l,
+        *,
+        color="blue",
+        stroke_color=None,
+        stroke_width=1,
+        fill_opacity=0.5,
+        stroke_opacity=0.9,
+        reset=False,
     ):
         """Add a miller plane to the config.
 
         Parameters
         ----------
-        h : int
-        k : int
-        l : int
-        as_poly : bool
-            Render the plane a polygon, otherwise as lines
-        color : str or tuple
+        h : int or float
+        k : int or float
+        l : int or float
+        color : str
             color of plane
+        stroke_color : str or None
+            color of outline (if None, color is used)
         stroke_width : int
             width of outline
         reset : bool
@@ -225,16 +247,20 @@ class AseView:
         """
         plane = [
             {
-                "index": [h, k, l],
-                "color": color,
+                "h": h,
+                "k": k,
+                "l": l,
+                "fill_color": color,
+                "stroke_color": stroke_color or color,
                 "stroke_width": stroke_width,
-                "as_poly": as_poly,
+                "fill_opacity": fill_opacity,
+                "stroke_opacity": stroke_opacity,
             }
         ]
         if reset:
             self.config.miller_planes = plane
         else:
-            self.config.miller_planes = self.config.miller_planes + plane
+            self.config.miller_planes = list(self.config.miller_planes) + plane
 
     def get_element_colors(self):
         """Return mapping of element atomic number to (hex) color."""
@@ -368,6 +394,7 @@ class AseView:
             uc_dash_pattern=config.uc_dash_pattern,
             show_bonds=config.show_bonds,
             miller_planes=config.miller_planes if config.show_miller_planes else None,
+            miller_planes_as_lines=config.miller_as_lines,
         )
 
         return atoms, element_groups
@@ -445,8 +472,14 @@ class AseView:
         for miller_type in ["miller_lines", "miller_planes"]:
             element_groups[miller_type].set_property_many(
                 {
-                    "color": [
-                        config.miller_planes[i].get("color", "blue")
+                    "fill_color": [
+                        config.miller_planes[i].get("fill_color", "blue")
+                        for i in element_groups[miller_type].get_elements_property(
+                            "index"
+                        )
+                    ],
+                    "stroke_color": [
+                        config.miller_planes[i].get("stroke_color", "blue")
                         for i in element_groups[miller_type].get_elements_property(
                             "index"
                         )
@@ -457,15 +490,20 @@ class AseView:
                             "index"
                         )
                     ],
+                    "fill_opacity": [
+                        config.miller_planes[i].get("fill_opacity", 1)
+                        for i in element_groups[miller_type].get_elements_property(
+                            "index"
+                        )
+                    ],
+                    "stroke_opacity": [
+                        config.miller_planes[i].get("stroke_opacity", 1)
+                        for i in element_groups[miller_type].get_elements_property(
+                            "index"
+                        )
+                    ],
                 },
                 element=True,
-            )
-            element_groups[miller_type].set_property_many(
-                {
-                    "fill_opacity": config.miller_fill_opacity,
-                    "stroke_opacity": config.miller_stroke_opacity,
-                },
-                element=False,
             )
 
     def make_svg(self, atoms, center_in_uc=False, repeat_uc=(1, 1, 1)):
