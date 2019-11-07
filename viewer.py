@@ -31,16 +31,27 @@ from aiida_2d.visualize.svg import (
 from aiida_2d.visualize.three import create_world_axes, generate_3js_render
 
 
-def is_positive_number(self, attribute, value):
-    """Validate that an attribute value is a number >= 0."""
-    if not isinstance(value, (int, float)) or value < 0:
-        raise TypeError(
-            f"'{attribute.name}' must be a positive number (got {value!r} that is a "
-            f"{value.__class__!r}).",
-            attribute,
-            (int, float),
-            value,
-        )
+def in_range(minimum=None, maximum=None):
+    """Validate that an attribute value is a number >= 0."""  # noqa: D202
+
+    def _validate(self, attribute, value):
+        raise_error = False
+        if not isinstance(value, (int, float)):
+            raise_error = True
+        elif minimum is not None and value < minimum:
+            raise_error = True
+        elif maximum is not None and value > maximum:
+            raise_error = True
+        if raise_error:
+            raise TypeError(
+                f"'{attribute.name}' must be a number in range [{minimum},{maximum}] "
+                f"(got {value!r} that is a {value.__class__!r}).",
+                attribute,
+                (int, float),
+                value,
+            )
+
+    return _validate
 
 
 def is_html_color(self, attribute, value):
@@ -68,9 +79,9 @@ class MillerPlane:
     l: float = attr.ib(default=0, validator=instance_of((float, int)))
     fill_color: str = attr.ib(default="red", validator=is_html_color)
     stroke_color: str = attr.ib(default="red", validator=is_html_color)
-    stroke_width: float = attr.ib(default=1.0, validator=is_positive_number)
-    fill_opacity: float = attr.ib(default=0.5, validator=is_positive_number)
-    stroke_opacity: float = attr.ib(default=0.9, validator=is_positive_number)
+    stroke_width: float = attr.ib(default=1.0, validator=in_range(0))
+    fill_opacity: float = attr.ib(default=0.5, validator=in_range(0, 1))
+    stroke_opacity: float = attr.ib(default=0.9, validator=in_range(0, 1))
 
     @h.validator
     def _validate_h(self, attribute, value):
@@ -110,16 +121,16 @@ class ViewConfig:
     # string format of unit cell rotations '50x,-10y,120z' (note: order matters)
     element_colors: str = attr.ib(default="ase", validator=in_(("ase", "vesta")))
     element_radii: str = attr.ib(default="ase", validator=in_(("ase", "vesta")))
-    radii_scale: float = attr.ib(default=0.89, validator=is_positive_number)
+    radii_scale: float = attr.ib(default=0.89, validator=in_range(0))
     atom_show_label: bool = attr.ib(default=True, validator=instance_of(bool))
     atom_label_by: str = attr.ib(
         default="element",
         validator=in_(("element", "index", "tag", "magmom", "charge", "array")),
     )
     atom_label_array: str = attr.ib(default="", validator=instance_of(str))
-    atom_font_size: int = attr.ib(default=14, validator=is_positive_number)
-    atom_font_color: int = attr.ib(default="black", validator=is_html_color)
-    atom_stroke_width: float = attr.ib(default=1.0, validator=is_positive_number)
+    atom_font_size: int = attr.ib(default=14, validator=[instance_of(int), in_range(1)])
+    atom_font_color: str = attr.ib(default="black", validator=is_html_color)
+    atom_stroke_width: float = attr.ib(default=1.0, validator=in_range(0))
     atom_color_by: str = attr.ib(
         default="element",
         validator=in_(
@@ -140,16 +151,16 @@ class ViewConfig:
     atom_colormap_range: Union[list, tuple] = attr.ib(
         default=(None, None), validator=instance_of((list, tuple))
     )
-    atom_lighten_by_depth: float = attr.ib(default=0.0, validator=is_positive_number)
+    atom_lighten_by_depth: float = attr.ib(default=0.0, validator=in_range(0))
     # Fraction (0 to 1) by which to lighten atom colors,
     # based on their fractional distance along the line from the
     # maximum to minimum z-coordinate of all elements
-    atom_opacity: float = attr.ib(default=0.95, validator=is_positive_number)
-    force_vector_scale: float = attr.ib(default=1.0, validator=is_positive_number)
-    velocity_vector_scale: float = attr.ib(default=1.0, validator=is_positive_number)
-    ghost_stroke_width: float = attr.ib(default=0.0, validator=is_positive_number)
-    ghost_lighten: float = attr.ib(default=0.0, validator=is_positive_number)
-    ghost_opacity: float = attr.ib(default=0.4, validator=is_positive_number)
+    atom_opacity: float = attr.ib(default=0.95, validator=in_range(0, 1))
+    force_vector_scale: float = attr.ib(default=1.0, validator=in_range(0))
+    velocity_vector_scale: float = attr.ib(default=1.0, validator=in_range(0))
+    ghost_stroke_width: float = attr.ib(default=0.0, validator=in_range(0))
+    ghost_lighten: float = attr.ib(default=0.0, validator=in_range(0))
+    ghost_opacity: float = attr.ib(default=0.4, validator=in_range(0, 1))
     ghost_show_label: bool = attr.ib(default=False, validator=instance_of(bool))
     ghost_cross_out: bool = attr.ib(default=False, validator=instance_of(bool))
     show_unit_cell: bool = attr.ib(default=True, validator=instance_of(bool))
@@ -159,22 +170,23 @@ class ViewConfig:
     uc_dash_pattern: Union[None, tuple] = attr.ib(default=None)
     uc_color: str = attr.ib(default="black", validator=is_html_color)
     show_bonds: bool = attr.ib(default=False, validator=instance_of(bool))
-    bond_opacity: float = attr.ib(default=0.8, validator=is_positive_number)
+    bond_opacity: float = attr.ib(default=0.8, validator=in_range(0, 1))
     show_miller_planes: bool = attr.ib(default=True, validator=instance_of(bool))
     miller_planes: Tuple[dict] = attr.ib(
         default=(), converter=convert_to_miller_dicts, validator=instance_of(tuple)
     )
     miller_as_lines: bool = attr.ib(default=False, validator=instance_of(bool))
     show_axes: bool = attr.ib(default=True, validator=instance_of(bool))
-    axes_length: float = attr.ib(default=15, validator=is_positive_number)
-    axes_font_size: int = attr.ib(default=14, validator=is_positive_number)
+    axes_length: float = attr.ib(default=15, validator=in_range(0))
+    axes_font_size: int = attr.ib(default=14, validator=[instance_of(int), in_range(1)])
     axes_line_color: str = attr.ib(default="black", validator=is_html_color)
     canvas_size: Tuple[float, float] = attr.ib(
         default=(400, 400), validator=instance_of((list, tuple))
     )
     canvas_color_foreground: str = attr.ib(default="#000000", validator=is_html_color)
     canvas_color_background: str = attr.ib(default="#ffffff", validator=is_html_color)
-    zoom: float = attr.ib(default=1.0, validator=is_positive_number)
+    canvas_background_opacity: float = attr.ib(default=0.0, validator=in_range(0, 1))
+    zoom: float = attr.ib(default=1.0, validator=in_range(0))
     canvas_crop: Union[list, tuple, None] = attr.ib(default=None)
     gui_swap_mouse: bool = attr.ib(default=False, validator=instance_of(bool))
 
@@ -585,6 +597,7 @@ class AseView:
             config.canvas_size,
             viewbox if config.canvas_crop else None,
             background_color=config.canvas_color_background,
+            background_opacity=config.canvas_background_opacity,
         )
 
     def make_gui(
@@ -670,7 +683,11 @@ class AseView:
         )
 
         renderer = generate_3js_render(
-            element_groups, canvas_size=config.canvas_size, zoom=config.zoom
+            element_groups,
+            canvas_size=config.canvas_size,
+            zoom=config.zoom,
+            background_color=config.canvas_color_background,
+            background_opacity=config.canvas_background_opacity,
         )
         if config.show_axes:
             import ipywidgets

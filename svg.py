@@ -7,8 +7,6 @@ import numpy as np
 from svgwrite import Drawing, path, shapes, text
 from svgwrite.container import Group
 
-from aiida_2d.visualize.color import Color
-
 
 def generate_svg_elements(element_group, element_colors=None, background_color="white"):
     """Create the SVG elements, related to the 3D objects.
@@ -257,7 +255,9 @@ def create_axes_elements(
     return svg_elements
 
 
-def create_svg_document(elements, size, viewbox=None, background_color="white"):
+def create_svg_document(
+    elements, size, viewbox=None, background_color="white", background_opacity=1.0
+):
     """Create the full SVG document.
 
     :param viewbox: (minx, miny, width, height)
@@ -265,9 +265,11 @@ def create_svg_document(elements, size, viewbox=None, background_color="white"):
     dwg = Drawing("ase.svg", profile="tiny", size=size)
     root = Group(id="root")
     dwg.add(root)
-    if Color(background_color).web != "white":
-        # apparently the best way, see: https://stackoverflow.com/a/11293812/5033292
-        root.add(shapes.Rect(size=size, fill=background_color))
+    # if Color(background_color).web != "white":
+    # apparently the best way, see: https://stackoverflow.com/a/11293812/5033292
+    root.add(
+        shapes.Rect(size=size, fill=background_color, fill_opacity=background_opacity)
+    )
     for element in elements:
         root.add(element)
     if viewbox:

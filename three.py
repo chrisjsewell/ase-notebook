@@ -10,7 +10,14 @@ def triangle_normal(a, b, c):
     return np.cross(b - a, c - a).tolist()
 
 
-def generate_3js_render(element_groups, canvas_size, zoom, camera_fov=30):
+def generate_3js_render(
+    element_groups,
+    canvas_size,
+    zoom,
+    camera_fov=30,
+    background_color="white",
+    background_opacity=1.0,
+):
     """Create a pythreejs scene of the elements."""
     import pythreejs as pjs
 
@@ -137,7 +144,7 @@ def generate_3js_render(element_groups, canvas_size, zoom, camera_fov=30):
         plane_mesh = pjs.Mesh(geometry=plane_geom, material=plane_mat)
         group_elem.add(plane_mesh)
 
-    scene = pjs.Scene()
+    scene = pjs.Scene(background=None)
     scene.add([group_elem])
 
     minp, maxp = element_groups.get_position_range()
@@ -165,6 +172,9 @@ def generate_3js_render(element_groups, canvas_size, zoom, camera_fov=30):
         controls=[controller],
         width=view_width,
         height=view_height,
+        alpha=True,
+        clearOpacity=background_opacity,
+        clearColor=background_color,
     )
     return renderer
 
