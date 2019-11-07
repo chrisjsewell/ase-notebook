@@ -1,4 +1,6 @@
 """A module for creating a pythreejs visualisation of a structure."""
+from math import radians, sqrt, tan
+
 import numpy as np
 
 from aiida_2d.visualize import Color
@@ -8,6 +10,44 @@ def triangle_normal(a, b, c):
     """Compute the normal of three points."""
     a, b, c = [np.array(i) for i in (a, b, c)]
     return np.cross(b - a, c - a).tolist()
+
+
+class RenderContainer(object):
+    """Container for the renderer, with  attribute access for key elements."""
+
+    def __init__(self, top_level, **kwargs):
+        """Initialise container."""
+        assert hasattr(top_level, "_ipython_display_")
+        kwargs["top_level"] = top_level
+        self._kwargs = kwargs
+
+    def __dir__(self):
+        """Get the attributes."""
+        return list(self._kwargs.keys())
+
+    def __getitem__(self, key):
+        """Return key."""
+        return self._kwargs[key]
+
+    def __getattr__(self, key):
+        """Return attribute."""
+        if key not in self._kwargs:
+            raise AttributeError(key)
+        return self._kwargs[key]
+
+    def __setattr__(self, name, key):
+        """Set attribute."""
+        if name not in ("_kwargs",):
+            raise AttributeError("Attributes are frozen")
+        return super().__setattr__(name, key)
+
+    def __contains__(self, key):
+        """Test if key in container."""
+        return key in self._kwargs
+
+    def _ipython_display_(self):
+        """Display the top level rendered in the notebook."""
+        return self.top_level._ipython_display_()
 
 
 def generate_3js_render(
@@ -21,7 +61,9 @@ def generate_3js_render(
     """Create a pythreejs scene of the elements."""
     import pythreejs as pjs
 
-    group_elem = pjs.Group()
+    key_elements = {}
+    group_elements = pjs.Group()
+    key_elements["group_elements"] = group_elements
 
     sphere_geom = {}
     sphere_mat = {}
@@ -32,6 +74,10 @@ def generate_3js_render(
     #     transparent=True, opacity=1.0, map=label_texture
     # )
 
+    group_atoms = pjs.Group()
+    key_elements["group_atoms"] = group_atoms
+    group_ghosts = pjs.Group()
+    key_elements["group_ghosts"] = group_ghosts
     for el in element_groups["atoms"]:
         if el.sradius not in sphere_geom:
             sphere_geom[el.sradius] = pjs.SphereBufferGeometry(
@@ -46,7 +92,10 @@ def generate_3js_render(
             geometry=sphere_geom[el.sradius], material=sphere_mat[material_hash]
         )
         mesh.position = el.position.tolist()
-        group_elem.add(mesh)
+        if el.ghost:
+            group_ghosts.add(mesh)
+        else:
+            group_atoms.add(mesh)
 
         if el.get("stroke_width", 1) > 0:
             outline_hash = (el.get("stroke_color", "black"),)
@@ -63,7 +112,13 @@ def generate_3js_render(
             outline_mesh.position = el.position.tolist()
             # TODO use stroke width
             outline_mesh.scale = (np.array(outline_mesh.scale) * 1.05).tolist()
-            group_elem.add(outline_mesh)
+            if el.ghost:
+                group_ghosts.add(outline_mesh)
+            else:
+                group_atoms.add(outline_mesh)
+
+    group_elements.add(group_atoms)
+    group_elements.add(group_ghosts)
 
     #     label_mesh = pjs.Mesh(geometry=sphere_geom[el.sradius], material=label_material)
     #     label_mesh.position = el.position.tolist()
@@ -77,7 +132,8 @@ def generate_3js_render(
             positions=[el.position.tolist() for el in element_groups["cell_lines"]]
         )
         cell_lines = pjs.LineSegments2(geometry=cell_line_geo, material=cell_line_mat)
-        group_elem.add(cell_lines)
+        key_elements["cell_lines"] = cell_lines
+        group_elements.add(cell_lines)
 
     if len(element_groups["bond_lines"]) > 0:
         bond_line_mat = pjs.LineMaterial(
@@ -91,7 +147,11 @@ def generate_3js_render(
             ],
         )
         bond_lines = pjs.LineSegments2(geometry=bond_line_geo, material=bond_line_mat)
-        group_elem.add(bond_lines)
+        key_elements["bond_lines"] = bond_lines
+        group_elements.add(bond_lines)
+
+    group_millers = pjs.Group()
+    key_elements["group_millers"] = group_millers
 
     if len(element_groups["miller_lines"]) > 0:
         miller_line_mat = pjs.LineMaterial(
@@ -107,7 +167,7 @@ def generate_3js_render(
         miller_lines = pjs.LineSegments2(
             geometry=miller_line_geo, material=miller_line_mat
         )
-        group_elem.add(miller_lines)
+        group_millers.add(miller_lines)
 
     for el in element_groups["miller_planes"]:
         vertices = el.position.tolist()
@@ -142,27 +202,32 @@ def generate_3js_render(
             side="DoubleSide",
         )
         plane_mesh = pjs.Mesh(geometry=plane_geom, material=plane_mat)
-        group_elem.add(plane_mesh)
+        group_millers.add(plane_mesh)
+
+    group_elements.add(group_millers)
 
     scene = pjs.Scene(background=None)
-    scene.add([group_elem])
-
-    minp, maxp = element_groups.get_position_range()
+    scene.add([group_elements])
 
     view_width, view_height = canvas_size
 
     minp, maxp = element_groups.get_position_range()
-    pos_camera = minp[2] - (maxp[2] - minp[2])
+    # compute a minimum camera distance, that is guaranteed to encapsulate all elements
+    camera_dist = maxp[2] + sqrt(maxp[0] ** 2 + maxp[1] ** 2) / tan(
+        radians(camera_fov / 2)
+    )
 
     camera = pjs.PerspectiveCamera(
         fov=camera_fov,
-        position=[0, 0, pos_camera],
+        position=[0, 0, camera_dist],
         aspect=view_width / view_height,
         zoom=zoom,
     )
     scene.add([camera])
     ambient_light = pjs.AmbientLight(color="lightgray")
+    key_elements["ambient_light"] = ambient_light
     direct_light = pjs.DirectionalLight(position=(maxp * 2).tolist())
+    key_elements["direct_light"] = direct_light
     scene.add([camera, ambient_light, direct_light])
 
     controller = pjs.OrbitControls(controlling=camera, screenSpacePanning=True)
@@ -176,7 +241,7 @@ def generate_3js_render(
         clearOpacity=background_opacity,
         clearColor=background_color,
     )
-    return renderer
+    return renderer, key_elements
 
 
 def create_world_axes(camera, controls, initial_rotation=np.eye(3), length=50, width=3):
@@ -209,6 +274,8 @@ def create_world_axes(camera, controls, initial_rotation=np.eye(3), length=50, w
     ax_scene = pjs.Scene()
 
     group_ax = pjs.Group()
+    # NOTE: could use AxesHelper, but this does not allow for linewidth seletion
+    # TODO: add arrow heads (ArrowHelper doesn't seem to work)
     ax_line_mat = pjs.LineMaterial(linewidth=width, vertexColors="VertexColors")
     ax_line_geo = pjs.LineSegmentsGeometry(
         positions=[

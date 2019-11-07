@@ -237,6 +237,8 @@ class Element(object):
 
     def __getattr__(self, key):
         """Return key."""
+        if key not in self._kwargs:
+            raise AttributeError(str(key))
         return self._kwargs[key]
 
     def __setattr__(self, name, key):

@@ -28,7 +28,11 @@ from aiida_2d.visualize.svg import (
     create_svg_document,
     generate_svg_elements,
 )
-from aiida_2d.visualize.three import create_world_axes, generate_3js_render
+from aiida_2d.visualize.three import (
+    create_world_axes,
+    generate_3js_render,
+    RenderContainer,
+)
 
 
 def in_range(minimum=None, maximum=None):
@@ -186,8 +190,9 @@ class ViewConfig:
     canvas_color_foreground: str = attr.ib(default="#000000", validator=is_html_color)
     canvas_color_background: str = attr.ib(default="#ffffff", validator=is_html_color)
     canvas_background_opacity: float = attr.ib(default=0.0, validator=in_range(0, 1))
-    zoom: float = attr.ib(default=1.0, validator=in_range(0))
     canvas_crop: Union[list, tuple, None] = attr.ib(default=None)
+    zoom: float = attr.ib(default=1.0, validator=in_range(0))
+    camera_fov: float = attr.ib(default=10.0, validator=in_range(1))
     gui_swap_mouse: bool = attr.ib(default=False, validator=instance_of(bool))
 
     @uc_dash_pattern.validator
@@ -682,12 +687,13 @@ class AseView:
             atoms, element_groups, bond_thickness=5, lighten_by_depth=False
         )
 
-        renderer = generate_3js_render(
+        renderer, key_elements = generate_3js_render(
             element_groups,
             canvas_size=config.canvas_size,
             zoom=config.zoom,
             background_color=config.canvas_color_background,
             background_opacity=config.canvas_background_opacity,
+            camera_fov=config.camera_fov,
         )
         if config.show_axes:
             import ipywidgets
@@ -695,9 +701,11 @@ class AseView:
             ax_renderer = create_world_axes(
                 renderer.camera, renderer.controls[0], initial_rotation=rotation_matrix
             )
-            renderer = ipywidgets.HBox([renderer, ax_renderer])
+            hbox = ipywidgets.HBox([renderer, ax_renderer])
 
-        return renderer
+        return RenderContainer(
+            hbox, element_renderer=renderer, axes_renderer=ax_renderer, **key_elements
+        )
 
 
 AseView.__init__.__doc__ = (
