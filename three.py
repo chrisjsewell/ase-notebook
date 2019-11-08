@@ -13,13 +13,12 @@ def triangle_normal(a, b, c):
 
 
 class RenderContainer(object):
-    """Container for the renderer, with  attribute access for key elements."""
+    """Container for the renderer, with attribute access for key elements."""
 
     def __init__(self, top_level, **kwargs):
         """Initialise container."""
-        assert hasattr(top_level, "_ipython_display_")
-        kwargs["top_level"] = top_level
         self._kwargs = kwargs
+        self.top_level = top_level
 
     def __dir__(self):
         """Get the attributes."""
@@ -29,17 +28,29 @@ class RenderContainer(object):
         """Return key."""
         return self._kwargs[key]
 
+    def __setitem__(self, key, value):
+        """Set key."""
+        if key == "top_level":
+            self.top_level = value
+        else:
+            self._kwargs[key] = value
+
     def __getattr__(self, key):
         """Return attribute."""
         if key not in self._kwargs:
             raise AttributeError(key)
         return self._kwargs[key]
 
-    def __setattr__(self, name, key):
+    def __setattr__(self, name, value):
         """Set attribute."""
-        if name not in ("_kwargs",):
+        if name == "top_level":
+            if not hasattr(value, "_ipython_display_"):
+                raise ValueError("top_level must have an `_ipython_display_` method")
+            self._kwargs["top_level"] = value
+            return
+        if name != "_kwargs":
             raise AttributeError("Attributes are frozen")
-        return super().__setattr__(name, key)
+        return super().__setattr__(name, value)
 
     def __contains__(self, key):
         """Test if key in container."""
@@ -57,6 +68,8 @@ def generate_3js_render(
     camera_fov=30,
     background_color="white",
     background_opacity=1.0,
+    reuse_objects=False,
+    use_clone_arrays=False,
 ):
     """Create a pythreejs scene of the elements."""
     import pythreejs as pjs
@@ -65,67 +78,138 @@ def generate_3js_render(
     group_elements = pjs.Group()
     key_elements["group_elements"] = group_elements
 
-    atom_geometry = {}
-    atom_material = {}
-    sphere_outline_mat = {}
-
-    key_elements["atom_materials"] = atom_material
-    key_elements["atom_geometries"] = atom_geometry
-
     # label_texture = pjs.TextTexture(string="Fe", color="black")
     # label_material = pjs.MeshLambertMaterial(
     #     transparent=True, opacity=1.0, map=label_texture
     # )
 
-    group_atoms = pjs.Group()
-    key_elements["group_atoms"] = group_atoms
-    group_ghosts = pjs.Group()
-    key_elements["group_ghosts"] = group_ghosts
+    unique_elements = {}
     for el in element_groups["atoms"]:
-        if el.sradius not in atom_geometry:
-            atom_geometry[el.sradius] = pjs.SphereBufferGeometry(
+        element_hash = (
+            ("radius", el.sradius),
+            ("color", el.color),
+            ("fill_opacity", el.fill_opacity),
+            ("stroke_color", el.get("stroke_color", "black")),
+            ("ghost", el.ghost),
+        )
+        unique_elements.setdefault(element_hash, []).append(el)
+
+    group_atoms = pjs.Group()
+    group_ghosts = pjs.Group()
+
+    atom_geometries = {}
+    atom_materials = {}
+    outline_materials = {}
+
+    for el_hash, els in unique_elements.items():
+        el = els[0]
+        data = dict(el_hash)
+
+        if reuse_objects:
+            atom_geometry = atom_geometries.setdefault(
+                el.sradius,
+                pjs.SphereBufferGeometry(
+                    radius=el.sradius, widthSegments=30, heightSegments=30
+                ),
+            )
+        else:
+            atom_geometry = pjs.SphereBufferGeometry(
                 radius=el.sradius, widthSegments=30, heightSegments=30
             )
-        material_hash = (el.color, el.fill_opacity)
-        if material_hash not in atom_material:
-            atom_material[material_hash] = pjs.MeshLambertMaterial(
+
+        if reuse_objects:
+            atom_material = atom_materials.setdefault(
+                (el.color, el.fill_opacity),
+                pjs.MeshLambertMaterial(
+                    color=el.color, transparent=True, opacity=el.fill_opacity
+                ),
+            )
+        else:
+            atom_material = pjs.MeshLambertMaterial(
                 color=el.color, transparent=True, opacity=el.fill_opacity
             )
-        mesh = pjs.Mesh(
-            geometry=atom_geometry[el.sradius], material=atom_material[material_hash]
-        )
-        mesh.position = el.position.tolist()
-        if el.ghost:
-            group_ghosts.add(mesh)
+
+        if use_clone_arrays:
+            atom_mesh = pjs.Mesh(geometry=atom_geometry, material=atom_material)
+            atom_array = pjs.CloneArray(
+                original=atom_mesh,
+                positions=[e.position.tolist() for e in els],
+                merge=False,
+            )
         else:
-            group_atoms.add(mesh)
+            atom_array = [
+                pjs.Mesh(
+                    geometry=atom_geometry,
+                    material=atom_material,
+                    position=e.position.tolist(),
+                )
+                for e in els
+            ]
+
+        data["geometry"] = atom_geometry
+        data["material_body"] = atom_material
+
+        if el.ghost:
+            key_elements["group_ghosts"] = group_ghosts
+            group_ghosts.add(atom_array)
+        else:
+            key_elements["group_atoms"] = group_atoms
+            group_atoms.add(atom_array)
 
         if el.get("stroke_width", 1) > 0:
-            outline_hash = (el.get("stroke_color", "black"),)
-            if outline_hash not in sphere_outline_mat:
-                sphere_outline_mat[outline_hash] = pjs.MeshBasicMaterial(
+            if reuse_objects:
+                outline_material = outline_materials.setdefault(
+                    el.get("stroke_color", "black"),
+                    pjs.MeshBasicMaterial(
+                        color=el.get("stroke_color", "black"),
+                        side="BackSide",
+                        transparent=True,
+                    ),
+                )
+            else:
+                outline_material = pjs.MeshBasicMaterial(
                     color=el.get("stroke_color", "black"),
                     side="BackSide",
                     transparent=True,
                 )
-            outline_mesh = pjs.Mesh(
-                geometry=atom_geometry[el.sradius],
-                material=sphere_outline_mat[outline_hash],
-            )
-            outline_mesh.position = el.position.tolist()
-            # TODO use stroke width
-            outline_mesh.scale = (np.array(outline_mesh.scale) * 1.05).tolist()
-            if el.ghost:
-                group_ghosts.add(outline_mesh)
+            # TODO use stroke width to dictate scale
+            if use_clone_arrays:
+                outline_mesh = pjs.Mesh(
+                    geometry=atom_geometry,
+                    material=outline_material,
+                    scale=(1.05, 1.05, 1.05),
+                )
+                outline_array = pjs.CloneArray(
+                    original=outline_mesh,
+                    positions=[e.position.tolist() for e in els],
+                    merge=False,
+                )
             else:
-                group_atoms.add(outline_mesh)
+                outline_array = [
+                    pjs.Mesh(
+                        geometry=atom_geometry,
+                        material=outline_material,
+                        position=e.position.tolist(),
+                        scale=(1.05, 1.05, 1.05),
+                    )
+                    for e in els
+                ]
+
+            data["material_outline"] = outline_material
+
+            if el.ghost:
+                group_ghosts.add(outline_array)
+            else:
+                group_atoms.add(outline_array)
+
+        key_elements.setdefault("atom_arrays", []).append(data)
 
     group_elements.add(group_atoms)
     group_elements.add(group_ghosts)
 
-    #     label_mesh = pjs.Mesh(geometry=sphere_geom[el.sradius], material=label_material)
-    #     label_mesh.position = el.position.tolist()
-    #     group_elem.add(label_mesh)
+    # label_mesh = pjs.Mesh(geometry=sphere_geom[el.sradius], material=label_material)
+    # label_mesh.position = el.position.tolist()
+    # group_elem.add(label_mesh)
 
     if len(element_groups["cell_lines"]) > 0:
         cell_line_mat = pjs.LineMaterial(
@@ -154,7 +238,8 @@ def generate_3js_render(
         group_elements.add(bond_lines)
 
     group_millers = pjs.Group()
-    key_elements["group_millers"] = group_millers
+    if len(element_groups["miller_lines"]) or len(element_groups["miller_planes"]):
+        key_elements["group_millers"] = group_millers
 
     if len(element_groups["miller_lines"]) > 0:
         miller_line_mat = pjs.LineMaterial(
@@ -247,7 +332,9 @@ def generate_3js_render(
     return renderer, key_elements
 
 
-def create_world_axes(camera, controls, initial_rotation=np.eye(3), length=50, width=3):
+def create_world_axes(
+    camera, controls, initial_rotation=np.eye(3), length=30, width=3, camera_fov=10
+):
     """Create a renderer, containing an axes and camera that is synced to another camera.
 
     adapted from http://jsfiddle.net/aqnL1mx9/
@@ -272,7 +359,6 @@ def create_world_axes(camera, controls, initial_rotation=np.eye(3), length=50, w
 
     canvas_width = length * 2
     canvas_height = length * 2
-    cam_distance = length * 3
 
     ax_scene = pjs.Scene()
 
@@ -291,8 +377,10 @@ def create_world_axes(camera, controls, initial_rotation=np.eye(3), length=50, w
 
     ax_scene.add([group_ax])
 
+    camera_dist = length / tan(radians(camera_fov / 2))
+
     ax_camera = pjs.PerspectiveCamera(
-        fov=50, aspect=canvas_width / canvas_height, near=1, far=1000
+        fov=camera_fov, aspect=canvas_width / canvas_height, near=1, far=1000
     )
     ax_camera.up = camera.up
     ax_renderer = pjs.Renderer(
@@ -306,7 +394,7 @@ def create_world_axes(camera, controls, initial_rotation=np.eye(3), length=50, w
         # so does not allow the camera to rotate upside-down).
         # TODO how could this be implemented on the client (js) side?
         new_position = np.array(camera.position) - np.array(controls.target)
-        new_position = cam_distance * new_position / np.linalg.norm(new_position)
+        new_position = camera_dist * new_position / np.linalg.norm(new_position)
         ax_camera.position = new_position.tolist()
         ax_camera.lookAt(ax_scene.position)
 
@@ -317,3 +405,137 @@ def create_world_axes(camera, controls, initial_rotation=np.eye(3), length=50, w
     ax_scene.observe(align_axes, names="position")
 
     return ax_renderer
+
+
+def make_basic_gui(container):
+    """Create a basic GUI layout.
+
+    Parameters
+    ----------
+    container : RenderContainer
+
+    Returns
+    -------
+    ipywidgets.GridspecLayout
+
+    """
+    import ipywidgets as ipyw
+
+    element_controls = [
+        ipyw.HTML(value="<b>Elements</b>", layout=ipyw.Layout(align_self="center"))
+    ]
+    for key, descript in [
+        ("group_atoms", "Atoms"),
+        ("cell_lines", "Unit Cell"),
+        ("bond_lines", "Bonds"),
+        ("group_millers", "Planes"),
+        ("group_ghosts", "Ghosts"),
+    ]:
+        if key not in container:
+            continue
+        toggle = ipyw.ToggleButton(
+            description=descript,
+            icon="eye",
+            button_style="primary",
+            value=container[key].visible,
+            layout=ipyw.Layout(width="auto"),
+        )
+        ipyw.jslink((toggle, "value"), (container[key], "visible"))
+        element_controls.append(toggle)
+
+    control_box_elements = ipyw.Box(
+        element_controls, layout=ipyw.Layout(flex_flow="column")
+    )
+    container["control_box_elements"] = control_box_elements
+
+    background_controls = [
+        ipyw.HTML(value="<b>Background</b>", layout=ipyw.Layout(align_self="center"))
+    ]
+    background_color = ipyw.ColorPicker(
+        concise=True,
+        description="Color",
+        description_tooltip="Background Color",
+        value=container.element_renderer.clearColor,
+        layout=ipyw.Layout(align_items="center"),
+    )
+    background_color.style.description_width = "40px"
+    ipyw.jslink((background_color, "value"), (container.element_renderer, "clearColor"))
+    background_controls.append(background_color)
+    background_opacity = ipyw.FloatSlider(
+        value=container.element_renderer.clearOpacity,
+        min=0,
+        max=1,
+        step=0.1,
+        orientation="horizontal",
+        readout=False,
+        description_tooltip="Background Opacity",
+    )
+    background_opacity.layout.max_width = "100px"
+    ipyw.jslink(
+        (background_opacity, "value"), (container.element_renderer, "clearOpacity")
+    )
+    background_controls.append(background_opacity)
+    # other_controls.append(ipyw.Label(value="Opacity", layout=ipyw.Layout(align_self="center")))
+
+    control_box_background = ipyw.Box(
+        background_controls, layout=ipyw.Layout(flex_flow="column")
+    )
+    container["control_box_background"] = control_box_background
+
+    axes = [container.axes_renderer] if "axes_renderer" in container else []
+
+    if axes and container.element_renderer.height > 200:
+        grid = ipyw.GridspecLayout(
+            1,
+            2,
+            width=f"{container.element_renderer.width + 100}px",
+            height=f"{container.element_renderer.height + 10}px",
+        )
+        grid[:, 0] = container.element_renderer
+        grid[0, 1] = ipyw.Box(
+            axes + [control_box_elements, control_box_background],
+            layout=ipyw.Layout(align_self="flex-start", flex_flow="column"),
+        )
+    else:
+        grid = ipyw.GridspecLayout(
+            1,
+            3,
+            width=f"{container.element_renderer.width + 200}px",
+            height=f"{container.element_renderer.height + 10}px",
+        )
+        grid[0, 0] = ipyw.Box(
+            axes, layout=ipyw.Layout(align_self="flex-end", flex_flow="column")
+        )
+        grid[0, 1] = container.element_renderer
+        grid[0, 2] = ipyw.Box(
+            [control_box_elements, control_box_background],
+            layout=ipyw.Layout(align_self="flex-start", flex_flow="column"),
+        )
+
+    return grid
+
+
+def gather_3d_objects(obj, objects=None):
+    """Recurse through objects children, to gather the set of 3D objects."""
+    # TODO create more complete method
+    import pythreejs as pjs
+
+    if objects is None:
+        objects = set()
+    if isinstance(obj, pjs.Renderer):
+        gather_3d_objects(obj.scene, objects)
+    elif isinstance(obj, pjs.Scene):
+        for child in obj.children:
+            gather_3d_objects(child, objects)
+    elif isinstance(obj, pjs.Object3DBase):
+        objects.add(obj)
+        for child in obj.children:
+            gather_3d_objects(child, objects)
+        if "geometry" in obj.trait_names():
+            objects.add(obj.geometry)
+        if "material" in obj.trait_names():
+            objects.add(obj.material)
+        if isinstance(obj, pjs.CloneArray):
+            gather_3d_objects(obj.original, objects)
+
+    return objects

@@ -31,6 +31,7 @@ from aiida_2d.visualize.svg import (
 from aiida_2d.visualize.three import (
     create_world_axes,
     generate_3js_render,
+    make_basic_gui,
     RenderContainer,
 )
 
@@ -666,7 +667,15 @@ class AseView:
             raise RuntimeError(process.stderr.read().decode())
         return process
 
-    def make_render(self, atoms, center_in_uc=False, repeat_uc=(1, 1, 1)):
+    def make_render(
+        self,
+        atoms,
+        center_in_uc=False,
+        repeat_uc=(1, 1, 1),
+        reuse_objects=True,
+        use_clone_arrays=True,
+        create_gui=True,
+    ):
         """Create a pythreejs render of the atoms or structure."""
         config = self.config
         atoms, element_groups = self._initialise_elements(
@@ -694,18 +703,21 @@ class AseView:
             background_color=config.canvas_color_background,
             background_opacity=config.canvas_background_opacity,
             camera_fov=config.camera_fov,
+            reuse_objects=reuse_objects,
+            use_clone_arrays=use_clone_arrays,
         )
         if config.show_axes:
-            import ipywidgets
-
-            ax_renderer = create_world_axes(
+            axes_renderer = create_world_axes(
                 renderer.camera, renderer.controls[0], initial_rotation=rotation_matrix
             )
-            hbox = ipywidgets.HBox([renderer, ax_renderer])
+            key_elements["axes_renderer"] = axes_renderer
 
-        return RenderContainer(
-            hbox, element_renderer=renderer, axes_renderer=ax_renderer, **key_elements
-        )
+        container = RenderContainer(renderer, element_renderer=renderer, **key_elements)
+        if create_gui:
+            gui = make_basic_gui(container)
+            container.top_level = gui
+
+        return container
 
 
 AseView.__init__.__doc__ = (
