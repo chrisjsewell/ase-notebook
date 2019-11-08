@@ -1,8 +1,8 @@
-"""Tests for ``aiida_2d.visualize.gui``."""
+"""Tests for ``ase_notebook.gui``."""
 import numpy as np
 import pytest
 
-from aiida_2d.visualize import core
+from ase_notebook import core
 
 
 def test_get_cell_coordinates():

@@ -1,27 +1,27 @@
-"""Tests for ``aiida_2d.visualize.gui``."""
+"""Tests for ``ase_notebook.gui``."""
 import os
 import sys
 
 import pytest
 
-from aiida_2d.visualize import viewer
+from ase_notebook import viewer
 
 
 @pytest.mark.skipif(
     sys.platform != "darwin" and not os.environ.get("DISPLAY", False),
     reason="no display available for gui",
 )
-def test_make_gui(get_test_structure):
+def test_make_gui(get_test_atoms):
     """Test ``make_gui``, from the viewer."""
-    structure = get_test_structure("pyrite")
+    atoms = get_test_atoms("pyrite")
     ase_view = viewer.AseView(
         miller_planes=[
-            {"index": [1, 1, 0], "color": "blue", "stroke_width": 1, "as_poly": False},
-            {"index": [1, 2, 1], "color": "green", "stroke_width": 1, "as_poly": True},
+            {"h": 1, "k": 1, "l": 0, "fill_color": "blue", "stroke_width": 1},
+            {"h": 1, "k": 2, "l": 1, "fill_color": "green", "stroke_width": 1},
         ],
         show_bonds=True,
     )
-    gui = ase_view.make_gui(structure, launch=False)
+    gui = ase_view.make_gui(atoms, launch=False)
     try:
         pass
     finally:
@@ -32,22 +32,23 @@ def test_make_gui(get_test_structure):
     sys.platform != "darwin" and not os.environ.get("DISPLAY", False),
     reason="no display available for gui",
 )
-def test_make_gui_occupancies(get_test_structure):
-    """Test ``make_gui``, from the viewer, when element occupacies are specified."""
-    from pymatgen.io.ase import AseAtomsAdaptor
-
-    structure = get_test_structure("pyrite")
-    atoms = AseAtomsAdaptor.get_atoms(structure)
+def test_make_gui_occupancies(get_test_atoms):
+    """Test making a GUI, with atoms that contain occupancies."""
+    atoms = get_test_atoms("pyrite")
     atoms.info["occupancy"] = {0: {"Fe": 0.75, "S": 0.1, "H": 0.1}}
     ase_view = viewer.AseView(
         miller_planes=[
-            {"index": [1, 1, 0], "color": "blue", "stroke_width": 1, "as_poly": False},
-            {"index": [1, 2, 1], "color": "green", "stroke_width": 1, "as_poly": True},
+            {"h": 1, "k": 1, "l": 0, "fill_color": "blue", "stroke_width": 1},
+            {"h": 1, "k": 2, "l": 1, "fill_color": "green", "stroke_width": 1},
         ],
+        miller_as_lines=True,
         show_bonds=True,
     )
-    gui = ase_view.make_gui(structure, launch=False)
+    gui = ase_view.make_gui(atoms, launch=False)
     try:
         pass
     finally:
         gui.exit()
+
+
+# Add a test that the console script is registered

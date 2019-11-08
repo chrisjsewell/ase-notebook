@@ -1,8 +1,7 @@
 [flake8]
 max-line-length = 120
 import-order-style = appnexus
-application-import-names = aiida_2d
-application-package-names = aiida
+application-import-names = ase_notebook
 ignore =
     # ignore `whitespace before ':'`, because incompatible with black formatter
     E203

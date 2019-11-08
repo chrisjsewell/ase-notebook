@@ -1,6 +1,8 @@
-"""Tests for ``aiida_2d.visualize.svg``."""
-from aiida_2d.visualize.svg import tessellate_rectangles
-from aiida_2d.visualize.viewer import AseView
+"""Tests for ``ase_notebook.svg``."""
+import numpy as np
+
+from ase_notebook.svg import tessellate_rectangles
+from ase_notebook.viewer import AseView
 
 
 def test_tessellate_rectangles():
@@ -36,10 +38,10 @@ def test_tessellate_rectangles():
     assert positions == [(0.0, 0.0), (5.0, 0.0), (8.0, 0.0), (13.0, 0.0), (20.0, 0.0)]
 
 
-def test_make_svg(get_test_structure):
+def test_make_svg(get_test_atoms):
     """Test make svg, from the viewer."""
-    structure = get_test_structure("pyrite")
-    structure.add_site_property("ghost", [True] + [False for _ in structure][1:])
+    atoms = get_test_atoms("pyrite")
+    atoms.set_array("ghost", np.array([True] + [False for _ in atoms][1:]))
     ase_view = AseView(
         uc_dash_pattern=(0.6, 0.4),
         show_bonds=True,
@@ -52,17 +54,14 @@ def test_make_svg(get_test_structure):
         canvas_size=(400, 400),
         zoom=1.2,
     )
-    ase_view.add_miller_plane(1, 2, 1, color="lightgreen", stroke_width=1, as_poly=True)
-    svg = ase_view.make_svg(structure, center_in_uc=True)
+    ase_view.add_miller_plane(1, 2, 1, color="lightgreen", stroke_width=1)
+    svg = ase_view.make_svg(atoms, center_in_uc=True)
     assert len(svg.elements) == 2
 
 
-def test_make_svg_occupancies(get_test_structure):
-    """Test ``make_svg``, from the viewer, when element occupacies are specified."""
-    from pymatgen.io.ase import AseAtomsAdaptor
-
-    structure = get_test_structure("pyrite")
-    atoms = AseAtomsAdaptor.get_atoms(structure)
+def test_make_svg_occupancies(get_test_atoms):
+    """Test ``make_svg``, from the viewer, when element occupancies are specified."""
+    atoms = get_test_atoms("pyrite")
     atoms.info["occupancy"] = {0: {"Fe": 0.75, "S": 0.1, "H": 0.1}}
     ase_view = AseView(
         uc_dash_pattern=(0.6, 0.4),
@@ -76,6 +75,6 @@ def test_make_svg_occupancies(get_test_structure):
         canvas_size=(400, 400),
         zoom=1.2,
     )
-    ase_view.add_miller_plane(1, 2, 1, color="lightgreen", stroke_width=1, as_poly=True)
-    svg = ase_view.make_svg(structure, center_in_uc=True)
+    ase_view.add_miller_plane(1, 2, 1, color="lightgreen", stroke_width=1)
+    svg = ase_view.make_svg(atoms, center_in_uc=True)
     assert len(svg.elements) == 2

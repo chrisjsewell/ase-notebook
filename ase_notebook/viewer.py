@@ -1,6 +1,5 @@
 """A module for creating visualisations of a structure."""
 from collections import Mapping
-import importlib
 import inspect
 import json
 import subprocess
@@ -8,28 +7,24 @@ import sys
 from time import sleep
 from typing import Tuple, Union
 
-import ase
 from ase.data import covalent_radii as ase_covalent_radii
 from ase.data.colors import jmol_colors as ase_element_colors
 import attr
 from attr.validators import in_, instance_of
 import numpy as np
 
-from aiida_2d.visualize.atom_info import create_info_lines
-from aiida_2d.visualize.color import Color, lighten_webcolor
-from aiida_2d.visualize.core import (
+from .atom_info import create_info_lines
+from .atoms_convert import convert_to_atoms, deserialize_atoms, serialize_atoms
+from .color import Color, lighten_webcolor
+from .core import (
     compute_projection,
     get_rotation_matrix,
     initialise_element_groups,
     VESTA_ELEMENT_INFO,
 )
-from aiida_2d.visualize.gui import AtomGui, AtomImages
-from aiida_2d.visualize.svg import (
-    create_axes_elements,
-    create_svg_document,
-    generate_svg_elements,
-)
-from aiida_2d.visualize.threejs import (
+from .gui import AtomGui, AtomImages
+from .svg import create_axes_elements, create_svg_document, generate_svg_elements
+from .threejs import (
     create_world_axes,
     generate_3js_render,
     make_basic_gui,
@@ -249,8 +244,16 @@ class AseView:
         return self._config
 
     def get_config_as_dict(self):
-        """Return the configuration as a dictionary."""
+        """Return the configuration as a JSONable dictionary."""
         return attr.asdict(self._config)
+
+    def get_input_as_dict(self, atoms, **kwargs):
+        """Return the configuration, atoms and kwargs as a JSONable dictionary."""
+        return {
+            "config": attr.asdict(self._config),
+            "atoms": serialize_atoms(convert_to_atoms(atoms)),
+            "kwargs": kwargs,
+        }
 
     def add_miller_plane(
         self,
@@ -384,40 +387,11 @@ class AseView:
 
         raise ValueError(self.config.atom_label_by)
 
-    @staticmethod
-    def convert_atoms(atoms, to_structure=False):
-        """Convert ``pymatgen.Structure`` to/from ``ase.Atoms``.
-
-        We preserve site properties, by storing them as arrays.
-        """
-        if isinstance(atoms, ase.Atoms) and not to_structure:
-            return atoms
-
-        from pymatgen import Structure
-        from pymatgen.io.ase import AseAtomsAdaptor
-
-        if isinstance(atoms, ase.Atoms) and to_structure:
-            return AseAtomsAdaptor.get_structure(atoms)
-
-        if isinstance(atoms, Structure) and not to_structure:
-            structure = atoms
-            atoms = AseAtomsAdaptor.get_atoms(atoms)
-            for key, array in structure.site_properties.items():
-                if key not in atoms.arrays:
-                    atoms.set_array(key, np.array(array))
-            # TODO propagate partial occupancies
-            return atoms
-
-        if isinstance(atoms, Structure) and to_structure:
-            return atoms
-
-        raise TypeError(f"atoms class not recognised: {atoms.__class__}")
-
     def _initialise_elements(self, atoms, center_in_uc=False, repeat_uc=(1, 1, 1)):
         """Prepare visualisation elements, in a backend agnostic manner."""
         config = self._config
 
-        atoms = self.convert_atoms(atoms)
+        atoms = convert_to_atoms(atoms)
 
         if center_in_uc:
             atoms.center()
@@ -657,18 +631,16 @@ class AseView:
         :param test_init: wait for a x seconds, then test whether the process initialized without error.
 
         """
-        structure = self.convert_atoms(atoms, to_structure=True)
-        struct_data = structure.as_dict()
-        config_data = self.get_config_as_dict()
+        atoms = convert_to_atoms(atoms)
         data_str = json.dumps(
             {
-                "structure": struct_data,
-                "config": config_data,
+                "atoms": serialize_atoms(atoms),
+                "config": self.get_config_as_dict(),
                 "kwargs": {"center_in_uc": center_in_uc, "repeat_uc": repeat_uc},
             }
         )
         process = subprocess.Popen(
-            "aiida-2d.view_atoms", stdin=subprocess.PIPE, stderr=subprocess.PIPE
+            "ase-notebook.view_atoms", stdin=subprocess.PIPE, stderr=subprocess.PIPE
         )
         process.stdin.write(data_str.encode())
         process.stdin.close()
@@ -753,17 +725,13 @@ def _launch_gui_exec(json_string=None):
             raise IOError("stdin is empty")
         json_string = sys.stdin.read()
     data = json.loads(json_string)
-    structure_dict = data.pop("structure", {})
+    atoms_dict = data.pop("atoms", {})
     config_dict = data.pop("config", {})
     kwargs = data.pop("kwargs", {})
 
-    module = importlib.import_module(structure_dict["@module"])
-    klass = getattr(module, structure_dict["@class"])
-    structure = klass.from_dict(
-        {k: v for k, v in structure_dict.items() if not k.startswith("@")}
-    )
+    atoms = deserialize_atoms(atoms_dict)
     ase_view = AseView(**config_dict)
-    ase_view.make_gui(structure, **kwargs)
+    ase_view.make_gui(atoms, **kwargs)
 
 
 # Note: original commands (when creating SVG via tkinter postscript)

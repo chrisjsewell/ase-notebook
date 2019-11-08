@@ -15,9 +15,9 @@ from ase.gui.view import GREEN, PURPLE, View
 import attr
 import numpy as np
 
-from aiida_2d.visualize.atom_info import create_info_lines
-from aiida_2d.visualize.color import lighten_webcolor
-from aiida_2d.visualize.core import initialise_element_groups
+from .atom_info import create_info_lines
+from .color import lighten_webcolor
+from .core import initialise_element_groups
 
 
 class AtomImages(Images):
@@ -478,7 +478,7 @@ def draw_elements(
 
     Parameters
     ----------
-    element_groups : aiida_2d.visualize.core.DrawGroup
+    element_groups : ase_notebook.core.DrawGroup
     canvas : tkinter.Canvas
     celldisp : numpy.array
         cell displacement

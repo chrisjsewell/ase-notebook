@@ -11,7 +11,7 @@ setup(
     author_email="chrisj_sewell@hotmail.com",
     maintainer="Chris Sewell",
     maintainer_email="chrisj_sewell@hotmail.com",
-    license="BSD-3",
+    license="MIT",
     url="https://github.com/chrisjsewell/ase-notebook",
     description="Highly configurable 2D (SVG) & 3D (threejs) visualisation creator for ASE/Pymatgen structures",
     long_description=open("README.md").read(),
@@ -24,19 +24,14 @@ setup(
         "ase>=3.18,<4",
         "attrs>=19,<20",
         "numpy>=1.16.4,<1.17",
-        # for conversion to ase and ase.Atoms serialisation
-        # TODO remove pymatgen dependency
-        "pymatgen==2018.9.12",
         # used for color-map
         # TODO use color-map package, with no matplotlib dependency?
         "matplotlib>=3.1,<4",
         # svg
         "svgwrite>=1.3,<2",
-        # threejs
-        "pythreejs>=2.1,<3",
-        "ipywidgets>=7.5,<8",
     ],
     extras_require={
+        "threejs": ["pythreejs>=2.1,<3", "ipywidgets>=7.5,<8"],
         "svgtools": [
             # concatenation
             "svgutils>=0.3,<0.4",
@@ -77,5 +72,9 @@ setup(
         "Topic :: Scientific/Engineering :: Chemistry",
         "Topic :: Scientific/Engineering :: Physics",
     ],
-    entry_points={},
+    entry_points={
+        "console_scripts": [
+            "ase-notebook.view_atoms = ase_notebook.viewer:_launch_gui_exec"
+        ]
+    },
 )

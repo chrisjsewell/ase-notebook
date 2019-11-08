@@ -25,12 +25,13 @@
     "python.testing.nosetestsEnabled": false,
     "python.testing.pytestEnabled": false,
 
-    // "autoDocstring.customTemplatePath": "/Users/cjs14/GitHub/aiida-2d/.vscode/docstring.mustache",
+    // "autoDocstring.customTemplatePath": "/Users/cjs14/GitHub/ase-notebook/.vscode/docstring.mustache",
     "autoDocstring.docstringFormat": "numpy",
     "restructuredtext.preview.sphinx.disabled": true,
     "restructuredtext.confPath": "${workspaceFolder}/docs/source",
     "restructuredtext.linter.extraArgs": ["--max-line-length", "120"],
     "cSpell.words": [
+        "Deserialize",
         "aiida",
         "analyzer",
         "angtol",

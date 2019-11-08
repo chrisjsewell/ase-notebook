@@ -3,7 +3,7 @@ from math import radians, sqrt, tan
 
 import numpy as np
 
-from aiida_2d.visualize import Color
+from .color import Color
 
 
 def triangle_normal(a, b, c):
