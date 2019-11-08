@@ -69,7 +69,8 @@ def generate_3js_render(
     background_color="white",
     background_opacity=1.0,
     reuse_objects=False,
-    use_clone_arrays=False,
+    use_atom_arrays=False,
+    use_label_arrays=False,
 ):
     """Create a pythreejs scene of the elements.
 
@@ -127,7 +128,7 @@ def generate_3js_render(
                 color=el.color, transparent=True, opacity=el.fill_opacity
             )
 
-        if use_clone_arrays:
+        if use_atom_arrays:
             atom_mesh = pjs.Mesh(geometry=atom_geometry, material=atom_material)
             atom_array = pjs.CloneArray(
                 original=atom_mesh,
@@ -140,6 +141,7 @@ def generate_3js_render(
                     geometry=atom_geometry,
                     material=atom_material,
                     position=e.position.tolist(),
+                    name=e.info_string,
                 )
                 for e in els
             ]
@@ -173,7 +175,7 @@ def generate_3js_render(
                     opacity=el.get("stroke_opacity", 1.0),
                 )
             # TODO use stroke width to dictate scale
-            if use_clone_arrays:
+            if use_atom_arrays:
                 outline_mesh = pjs.Mesh(
                     geometry=atom_geometry,
                     material=outline_material,
@@ -207,51 +209,7 @@ def generate_3js_render(
     group_elements.add(group_atoms)
     group_elements.add(group_ghosts)
 
-    group_labels = pjs.Group()
-    unique_label_sets = {}
-
-    for el in element_groups["atoms"]:
-        if "label" in el and el.label is not None:
-            unique_label_sets.setdefault(
-                (("label", el.label), ("color", el.get("font_color", "black"))), []
-            ).append(el)
-
-    if unique_label_sets:
-        key_elements["group_labels"] = group_labels
-
-    for el_hash, els in unique_label_sets.items():
-        el = els[0]
-        data = dict(el_hash)
-        # depthWrite=depthTest=False is required, for the sprite to remain on top,
-        # and not have the whitespace obscure objects behind, see:
-        # https://stackoverflow.com/questions/11165345/three-js-webgl-transparent-planes-hiding-other-planes-behind-them
-        text_material = pjs.SpriteMaterial(
-            map=pjs.TextTexture(
-                string=el.label,
-                color=el.get("font_color", "black"),
-                size=2000,  # TODO this texttexture size seems to work, but why?
-            ),
-            opacity=1.0,
-            transparent=True,
-            depthWrite=False,
-            depthTest=False,
-        )
-        data["material"] = text_material
-        key_elements.setdefault("label_arrays", []).append(data)
-        if use_clone_arrays:
-            text_sprite = pjs.Sprite(material=text_material)
-            label_array = pjs.CloneArray(
-                original=text_sprite,
-                positions=[e.position.tolist() for e in els],
-                merge=False,
-            )
-        else:
-            label_array = [
-                pjs.Sprite(material=text_material, position=e.position.tolist())
-                for e in els
-            ]
-        group_labels.add(label_array)
-
+    group_labels = add_labels(element_groups, key_elements, use_label_arrays)
     group_elements.add(group_labels)
 
     if len(element_groups["cell_lines"]) > 0:
@@ -361,11 +319,24 @@ def generate_3js_render(
     key_elements["direct_light"] = direct_light
     scene.add([camera, ambient_light, direct_light])
 
-    controller = pjs.OrbitControls(controlling=camera, screenSpacePanning=True)
+    camera_control = pjs.OrbitControls(controlling=camera, screenSpacePanning=True)
+
+    atom_picker = pjs.Picker(controlling=group_atoms, event="dblclick")
+    key_elements["atom_picker"] = atom_picker
+    material = pjs.SpriteMaterial(
+        map=create_arrow_texture(right=False),
+        transparent=True,
+        depthWrite=False,
+        depthTest=False,
+    )
+    atom_pointer = pjs.Sprite(material=material, scale=(4, 3, 1), visible=False)
+    scene.add(atom_pointer)
+    key_elements["atom_pointer"] = atom_pointer
+
     renderer = pjs.Renderer(
         camera=camera,
         scene=scene,
-        controls=[controller],
+        controls=[camera_control, atom_picker],
         width=view_width,
         height=view_height,
         alpha=True,
@@ -373,6 +344,59 @@ def generate_3js_render(
         clearColor=background_color,
     )
     return renderer, key_elements
+
+
+def add_labels(element_groups, key_elements, use_label_arrays):
+    """Create label elements for the scene."""
+    import pythreejs as pjs
+
+    group_labels = pjs.Group()
+    unique_label_sets = {}
+
+    for el in element_groups["atoms"]:
+        if "label" in el and el.label is not None:
+            unique_label_sets.setdefault(
+                (("label", el.label), ("color", el.get("font_color", "black"))), []
+            ).append(el)
+
+    if unique_label_sets:
+        key_elements["group_labels"] = group_labels
+
+    for el_hash, els in unique_label_sets.items():
+        el = els[0]
+        data = dict(el_hash)
+        # depthWrite=depthTest=False is required, for the sprite to remain on top,
+        # and not have the whitespace obscure objects behind, see:
+        # https://stackoverflow.com/questions/11165345/three-js-webgl-transparent-planes-hiding-other-planes-behind-them
+        # TODO can this be improved?
+        text_material = pjs.SpriteMaterial(
+            map=pjs.TextTexture(
+                string=el.label,
+                color=el.get("font_color", "black"),
+                size=2000,  # this texttexture size seems to work, not sure why?
+            ),
+            opacity=1.0,
+            transparent=True,
+            depthWrite=False,
+            depthTest=False,
+        )
+        data["material"] = text_material
+        key_elements.setdefault("label_arrays", []).append(data)
+        if use_label_arrays:
+            text_sprite = pjs.Sprite(material=text_material)
+            label_array = pjs.CloneArray(
+                original=text_sprite,
+                positions=[e.position.tolist() for e in els],
+                merge=False,
+            )
+        else:
+            label_array = [
+                pjs.Sprite(material=text_material, position=e.position.tolist())
+                for e in els
+            ]
+        group_labels.add(label_array)
+
+    return group_labels
 
 
 def create_world_axes(
@@ -481,7 +505,7 @@ def make_basic_gui(container):
             description=descript,
             icon="eye",
             button_style="primary",
-            value=container[key].visible,
+            value=False if key == "group_labels" else container[key].visible,
             layout=ipyw.Layout(width="auto"),
         )
         ipyw.jslink((toggle, "value"), (container[key], "visible"))
@@ -528,30 +552,53 @@ def make_basic_gui(container):
 
     axes = [container.axes_renderer] if "axes_renderer" in container else []
 
+    info_box = ipyw.HTML(
+        value="Double-click atom for info.",
+        color="grey",
+        layout=ipyw.Layout(
+            max_height="10px", margin="0px 0px 0px 0px", align_self="flex-start"
+        ),
+    )
+
+    def on_click(change):
+        obj = change["new"]
+        if obj is None:
+            container.atom_pointer.visible = False
+            info_box.value = ""
+        else:
+            info_box.value = obj.name
+            # container.atom_pointer.position = container.atom_picker.point
+            container.atom_pointer.position = obj.position
+            container.atom_pointer.visible = True
+
+    container.atom_picker.observe(on_click, names=["object"])
+
     if axes and container.element_renderer.height > 200:
         grid = ipyw.GridspecLayout(
-            1,
+            2,
             2,
             width=f"{container.element_renderer.width + 100}px",
-            height=f"{container.element_renderer.height + 10}px",
+            height=f"{container.element_renderer.height + 35}px",
         )
-        grid[:, 0] = container.element_renderer
-        grid[0, 1] = ipyw.Box(
+        grid[0, 0] = container.element_renderer
+        grid[1, 0] = info_box
+        grid[:, 1] = ipyw.Box(
             axes + [control_box_elements, control_box_background],
             layout=ipyw.Layout(align_self="flex-start", flex_flow="column"),
         )
     else:
         grid = ipyw.GridspecLayout(
-            1,
+            2,
             3,
             width=f"{container.element_renderer.width + 200}px",
-            height=f"{container.element_renderer.height + 10}px",
+            height=f"{container.element_renderer.height + 35}px",
         )
-        grid[0, 0] = ipyw.Box(
+        grid[:, 0] = ipyw.Box(
             axes, layout=ipyw.Layout(align_self="flex-end", flex_flow="column")
         )
         grid[0, 1] = container.element_renderer
-        grid[0, 2] = ipyw.Box(
+        grid[1, 1] = info_box
+        grid[:, 2] = ipyw.Box(
             [control_box_elements, control_box_background],
             layout=ipyw.Layout(align_self="flex-start", flex_flow="column"),
         )
@@ -583,3 +630,33 @@ def gather_3d_objects(obj, objects=None):
             gather_3d_objects(obj.original, objects)
 
     return objects
+
+
+def create_arrow_texture(width=2 ** 9, height=2 ** 9, color="red", right=True):
+    """Create an array map of an arrow."""
+    import pythreejs as pjs
+
+    color_rgba = list(Color(color).rgb) + [1.0]
+
+    array = np.zeros((width, height, 4), dtype="float32")
+    if right:  # facing right
+        for y in range(0, int(width / 4)):
+            for x in range(int(height * 9 / 24), int(height * 15 / 24)):
+                array[x, y, :] = color_rgba
+        for y in range(int(width / 4), int(width / 2)):
+            for x in range(
+                int(0 + height * y / (width)), int(height - height * y / (width))
+            ):
+                array[x, y, :] = color_rgba
+    else:  # facing left
+        for y in range(int(width * 3 / 4), int(width)):
+            for x in range(int(height * 9 / 24), int(height * 15 / 24)):
+                array[x, y, :] = color_rgba
+        for y in range(int(width / 2), int(width * 3 / 4)):
+            for x in range(
+                int(height - ((height / 2) * y / (width / 2))),
+                int(0 + ((height / 2) * y / (width / 2))),
+            ):
+                array[x, y, :] = color_rgba
+
+    return pjs.DataTexture(data=array, format="RGBAFormat", type="FloatType")

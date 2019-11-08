@@ -11,11 +11,11 @@ from ase.data import covalent_radii as default_covalent_radii
 from ase.gui import ui
 from ase.gui.gui import GUI
 from ase.gui.images import Images
-from ase.gui.status import Status
 from ase.gui.view import GREEN, PURPLE, View
 import attr
 import numpy as np
 
+from aiida_2d.visualize.atom_info import create_info_lines
 from aiida_2d.visualize.color import lighten_webcolor
 from aiida_2d.visualize.core import initialise_element_groups
 
@@ -99,7 +99,6 @@ class AtomGui(GUI):
         View.__init__(self, self.config["rotations"])
         if element_colors:
             self.colors = dict(enumerate(element_colors))
-        Status.__init__(self)
 
         self.subprocesses = []  # list of external processes
         self.movie_window = None
@@ -369,8 +368,11 @@ class AtomGui(GUI):
         self.window.update()
 
         if status:
-            # TODO status fails if an atoms array contains strings
-            self.status(self.atoms)
+            num_atoms = len(self.atoms)
+            indices = np.arange(num_atoms)[self.images.selected[:num_atoms]]
+            ordered_indices = [i for i in self.images.selected_ordered if i < num_atoms]
+            status_lines = create_info_lines(self.atoms, indices, ordered_indices)
+            self.window.update_status_line(" " + "; ".join(status_lines))
 
 
 def draw_arrow(canvas, coords, width, scale):

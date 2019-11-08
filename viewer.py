@@ -15,6 +15,7 @@ import attr
 from attr.validators import in_, instance_of
 import numpy as np
 
+from aiida_2d.visualize.atom_info import create_info_lines
 from aiida_2d.visualize.color import Color, lighten_webcolor
 from aiida_2d.visualize.core import (
     compute_projection,
@@ -28,7 +29,7 @@ from aiida_2d.visualize.svg import (
     create_svg_document,
     generate_svg_elements,
 )
-from aiida_2d.visualize.three import (
+from aiida_2d.visualize.threejs import (
     create_world_axes,
     generate_3js_render,
     make_basic_gui,
@@ -490,6 +491,9 @@ class AseView:
                     config.ghost_stroke_opacity if g else config.atom_stroke_opacity
                     for g in ghost_atoms
                 ],
+                "info_string": [
+                    "; ".join(create_info_lines(atoms, [i])) for i in range(len(atoms))
+                ],
             },
             element=True,
         )
@@ -679,7 +683,8 @@ class AseView:
         center_in_uc=False,
         repeat_uc=(1, 1, 1),
         reuse_objects=True,
-        use_clone_arrays=True,
+        use_atom_arrays=False,
+        use_label_arrays=True,
         create_gui=True,
     ):
         """Create a pythreejs render of the atoms or structure."""
@@ -710,7 +715,8 @@ class AseView:
             background_opacity=config.canvas_background_opacity,
             camera_fov=config.camera_fov,
             reuse_objects=reuse_objects,
-            use_clone_arrays=use_clone_arrays,
+            use_atom_arrays=use_atom_arrays,
+            use_label_arrays=use_label_arrays,
         )
         if config.show_axes:
             axes_renderer = create_world_axes(
@@ -727,7 +733,7 @@ class AseView:
 
 
 AseView.__init__.__doc__ = (
-    "kwargs are used to initialise SVGConfig:"
+    "kwargs are used to initialise ViewConfig:"
     f"\n{inspect.signature(ViewConfig.__init__)}"
 )
 
