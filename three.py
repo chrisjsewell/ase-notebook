@@ -71,19 +71,17 @@ def generate_3js_render(
     reuse_objects=False,
     use_clone_arrays=False,
 ):
-    """Create a pythreejs scene of the elements."""
+    """Create a pythreejs scene of the elements.
+
+    Regarding initialisation performance, see: https://github.com/jupyter-widgets/pythreejs/issues/154
+    """
     import pythreejs as pjs
 
     key_elements = {}
     group_elements = pjs.Group()
     key_elements["group_elements"] = group_elements
 
-    # label_texture = pjs.TextTexture(string="Fe", color="black")
-    # label_material = pjs.MeshLambertMaterial(
-    #     transparent=True, opacity=1.0, map=label_texture
-    # )
-
-    unique_elements = {}
+    unique_atom_sets = {}
     for el in element_groups["atoms"]:
         element_hash = (
             ("radius", el.sradius),
@@ -92,7 +90,7 @@ def generate_3js_render(
             ("stroke_color", el.get("stroke_color", "black")),
             ("ghost", el.ghost),
         )
-        unique_elements.setdefault(element_hash, []).append(el)
+        unique_atom_sets.setdefault(element_hash, []).append(el)
 
     group_atoms = pjs.Group()
     group_ghosts = pjs.Group()
@@ -101,7 +99,7 @@ def generate_3js_render(
     atom_materials = {}
     outline_materials = {}
 
-    for el_hash, els in unique_elements.items():
+    for el_hash, els in unique_atom_sets.items():
         el = els[0]
         data = dict(el_hash)
 
@@ -164,6 +162,7 @@ def generate_3js_render(
                         color=el.get("stroke_color", "black"),
                         side="BackSide",
                         transparent=True,
+                        opacity=el.get("stroke_opacity", 1.0),
                     ),
                 )
             else:
@@ -171,6 +170,7 @@ def generate_3js_render(
                     color=el.get("stroke_color", "black"),
                     side="BackSide",
                     transparent=True,
+                    opacity=el.get("stroke_opacity", 1.0),
                 )
             # TODO use stroke width to dictate scale
             if use_clone_arrays:
@@ -207,9 +207,52 @@ def generate_3js_render(
     group_elements.add(group_atoms)
     group_elements.add(group_ghosts)
 
-    # label_mesh = pjs.Mesh(geometry=sphere_geom[el.sradius], material=label_material)
-    # label_mesh.position = el.position.tolist()
-    # group_elem.add(label_mesh)
+    group_labels = pjs.Group()
+    unique_label_sets = {}
+
+    for el in element_groups["atoms"]:
+        if "label" in el and el.label is not None:
+            unique_label_sets.setdefault(
+                (("label", el.label), ("color", el.get("font_color", "black"))), []
+            ).append(el)
+
+    if unique_label_sets:
+        key_elements["group_labels"] = group_labels
+
+    for el_hash, els in unique_label_sets.items():
+        el = els[0]
+        data = dict(el_hash)
+        # depthWrite=depthTest=False is required, for the sprite to remain on top,
+        # and not have the whitespace obscure objects behind, see:
+        # https://stackoverflow.com/questions/11165345/three-js-webgl-transparent-planes-hiding-other-planes-behind-them
+        text_material = pjs.SpriteMaterial(
+            map=pjs.TextTexture(
+                string=el.label,
+                color=el.get("font_color", "black"),
+                size=2000,  # TODO this texttexture size seems to work, but why?
+            ),
+            opacity=1.0,
+            transparent=True,
+            depthWrite=False,
+            depthTest=False,
+        )
+        data["material"] = text_material
+        key_elements.setdefault("label_arrays", []).append(data)
+        if use_clone_arrays:
+            text_sprite = pjs.Sprite(material=text_material)
+            label_array = pjs.CloneArray(
+                original=text_sprite,
+                positions=[e.position.tolist() for e in els],
+                merge=False,
+            )
+        else:
+            label_array = [
+                pjs.Sprite(material=text_material, position=e.position.tolist())
+                for e in els
+            ]
+        group_labels.add(label_array)
+
+    group_elements.add(group_labels)
 
     if len(element_groups["cell_lines"]) > 0:
         cell_line_mat = pjs.LineMaterial(
@@ -427,6 +470,7 @@ def make_basic_gui(container):
     for key, descript in [
         ("group_atoms", "Atoms"),
         ("cell_lines", "Unit Cell"),
+        ("group_labels", "Labels"),
         ("bond_lines", "Bonds"),
         ("group_millers", "Planes"),
         ("group_ghosts", "Ghosts"),

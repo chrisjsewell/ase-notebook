@@ -136,6 +136,7 @@ class ViewConfig:
     atom_font_size: int = attr.ib(default=14, validator=[instance_of(int), in_range(1)])
     atom_font_color: str = attr.ib(default="black", validator=is_html_color)
     atom_stroke_width: float = attr.ib(default=1.0, validator=in_range(0))
+    atom_stroke_opacity: float = attr.ib(default=0.95, validator=in_range(0, 1))
     atom_color_by: str = attr.ib(
         default="element",
         validator=in_(
@@ -166,6 +167,7 @@ class ViewConfig:
     ghost_stroke_width: float = attr.ib(default=0.0, validator=in_range(0))
     ghost_lighten: float = attr.ib(default=0.0, validator=in_range(0))
     ghost_opacity: float = attr.ib(default=0.4, validator=in_range(0, 1))
+    ghost_stroke_opacity: float = attr.ib(default=0.4, validator=in_range(0, 1))
     ghost_show_label: bool = attr.ib(default=False, validator=instance_of(bool))
     ghost_cross_out: bool = attr.ib(default=False, validator=instance_of(bool))
     show_unit_cell: bool = attr.ib(default=True, validator=instance_of(bool))
@@ -482,6 +484,10 @@ class AseView:
                 ],
                 "stroke_width": [
                     config.ghost_stroke_width if g else config.atom_stroke_width
+                    for g in ghost_atoms
+                ],
+                "stroke_opacity": [
+                    config.ghost_stroke_opacity if g else config.atom_stroke_opacity
                     for g in ghost_atoms
                 ],
             },
