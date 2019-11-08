@@ -4,9 +4,11 @@
 #    ```python
 #    from distutils.core import run_setup
 #    dist = run_setup("setup.py")
-#    "\n".join(dist.install_requires + [i for e in dist.extras_require.values() for i in e])
+#    with open("requirements.in", "w") as f:
+#       f.write("\n".join(
+#            dist.install_requires + [i for e in dist.extras_require.values() for i in e]))
 #    ```
-#    pip-compile --output-file=requirements-lock.txt requirements.txt
+#    pip-compile --output-file=requirements-lock-dev.txt requirements.in
 #
 alabaster==0.7.12         # via sphinx
 appdirs==1.4.3            # via black
@@ -42,7 +44,7 @@ idna==2.8                 # via requests
 imagesize==1.1.0          # via sphinx
 import-order==0.0.11
 importlib-metadata==0.23  # via flake8-comprehensions, jsonschema, pluggy, pre-commit
-importlib-resources==1.0.2  # via pre-commit
+importlib-resources==1.0.2
 ipydatawidgets==4.0.1     # via pythreejs
 ipykernel==5.1.3          # via ipywidgets, notebook
 ipypublish==0.10.9
