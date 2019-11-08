@@ -1,0 +1,54 @@
+# Install pre-commit hooks via
+# pre-commit install
+
+- repo: git://github.com/pre-commit/pre-commit-hooks
+  rev: v2.2.3
+  hooks:
+  - id: check-json
+    exclude: vscode/settings\.json
+  - id: check-yaml
+  - id: end-of-file-fixer
+  - id: trailing-whitespace
+  # - id: flake8
+
+- repo: https://github.com/psf/black
+  rev: 19.3b0
+  hooks:
+  - id: black
+
+- repo: local
+  hooks:
+
+  # using within local repo means that plugins can be added
+  - id: flake8
+    name: Flake8
+    description: This hook runs flake8.
+    entry: flake8
+    language: python
+    types: [python]
+    require_serial: true
+
+  - id: doc8
+    entry: doc8
+    language: system
+    types: [rst]
+    name: doc8 - Lint the documentation.
+
+  - id: travis-linter
+    name: Travis Lint
+    entry: travis lint
+    files: .travis.yml
+    language: ruby
+    additional_dependencies: ['travis']
+
+  # - id: conda
+  #   name: Create environment.yml
+  #   entry: python ./.travis-data/check_version.py conda
+  #   language: system
+  #   files: >-
+  #     (?x)^(
+  #       setup.py|
+  #       .travis-data/check_version.py|
+  #       conda_dev_env.yml|
+  #     )$
+  #   pass_filenames: false

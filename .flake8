@@ -1,0 +1,10 @@
+[flake8]
+max-line-length = 120
+import-order-style = appnexus
+application-import-names = aiida_2d
+application-package-names = aiida
+ignore =
+    # ignore `whitespace before ':'`, because incompatible with black formatter
+    E203
+    # ignore `line break before binary operator`, because incompatible with black formatter
+    W503
