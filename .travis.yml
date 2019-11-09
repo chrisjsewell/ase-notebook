@@ -3,6 +3,9 @@ language: python
 
 cache: pip
 
+services:
+  - xvfb  # used for GUI testing
+
 matrix:
     include:
       - python: 3.6
