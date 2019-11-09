@@ -4,6 +4,7 @@ import json
 import subprocess
 import sys
 from time import sleep
+from typing import Union
 
 from ase.data import covalent_radii as ase_covalent_radii
 from ase.data.colors import jmol_colors as ase_element_colors
@@ -26,18 +27,18 @@ from .backend.threejs import (
 )
 from .color import lighten_webcolor
 from .configuration import ViewConfig
+from .data import load_data_file
 from .draw_utils import (
     compute_projection,
     get_rotation_matrix,
     initialise_element_groups,
-    VESTA_ELEMENT_INFO,
 )
 
 
 class AseView:
     """Class for visualising ``ase.Atoms`` or ``pymatgen.Structure``."""
 
-    def __init__(self, config=None, **kwargs):
+    def __init__(self, config: Union[None, ViewConfig] = None, **kwargs):
         """This is replaced by ``SVGConfig`` docstring."""  # noqa: D401
         if config is not None:
             self._config = config
@@ -116,9 +117,10 @@ class AseView:
                 for c in ase_element_colors
             ]
         if self.config.element_colors == "vesta":
+            data = load_data_file("vesta_element_data.json")
             return [
-                "#{0:02X}{1:02X}{2:02X}".format(*(int(x * 255) for x in d[4:]))
-                for d in VESTA_ELEMENT_INFO
+                "#{0:02X}{1:02X}{2:02X}".format(*(int(x * 255) for x in (r, g, b)))
+                for r, g, b in zip(data["r"], data["g"], data["b"])
             ]
         raise ValueError(self.config.element_colors)
 
@@ -127,7 +129,8 @@ class AseView:
         if self.config.element_radii == "ase":
             return ase_covalent_radii.copy()
         if self.config.element_radii == "vesta":
-            return [d[1] for d in VESTA_ELEMENT_INFO]
+            data = load_data_file("vesta_element_data.json")
+            return data["radius"]
         raise ValueError(self.config.element_radii)
 
     def get_atom_colors(self, atoms):
@@ -531,11 +534,11 @@ def _launch_gui_exec(json_string=None):
             raise IOError("stdin is empty")
         json_string = sys.stdin.read()
     data = json.loads(json_string)
-    atoms_dict = data.pop("atoms", {})
+    atoms_json = data.pop("atoms", {})
     config_dict = data.pop("config", {})
     kwargs = data.pop("kwargs", {})
 
-    atoms = deserialize_atoms(atoms_dict)
+    atoms = deserialize_atoms(atoms_json)
     ase_view = AseView(**config_dict)
     ase_view.make_gui(atoms, **kwargs)
 

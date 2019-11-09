@@ -96,7 +96,7 @@ def ase_decoder_hook(dct):
     return dct
 
 
-def serialize_atoms(atoms: ase.Atoms, description: str = "") -> dict:
+def serialize_atoms(atoms: ase.Atoms, description: str = "") -> str:
     """Serialize an ase.Atoms instance to a dictionary."""
     dct = {
         "description": description,
@@ -110,15 +110,15 @@ def serialize_atoms(atoms: ase.Atoms, description: str = "") -> dict:
     return ASEEncoder().encode(dct)
 
 
-def deserialize_atoms(dct: dict) -> ase.Atoms:
-    """Deserialize a dictionary to an ase.Atoms instance."""
-    dct = json.JSONDecoder(object_hook=ase_decoder_hook).decode(dct)
+def deserialize_atoms(json_string: str) -> ase.Atoms:
+    """Deserialize a JSON string to an ase.Atoms instance."""
+    json_string = json.JSONDecoder(object_hook=ase_decoder_hook).decode(json_string)
     atoms = ase.Atoms()
-    atoms.cell = dct["cell"]
-    atoms.arrays = numpyfy(dct["arrays"])
-    atoms.info = dct["info"]
-    atoms.constraints = [dict2constraint(d) for d in dct["constraints"]]
-    atoms.set_celldisp(dct["celldisp"])
+    atoms.cell = json_string["cell"]
+    atoms.arrays = numpyfy(json_string["arrays"])
+    atoms.info = json_string["info"]
+    atoms.constraints = [dict2constraint(d) for d in json_string["constraints"]]
+    atoms.set_celldisp(json_string["celldisp"])
     # TODO ase.calculators.calculator.Calculator has a todict method,
     # but not clear how to convert it back
 
@@ -130,8 +130,11 @@ def convert_to_atoms(obj):
     if isinstance(obj, ase.Atoms):
         return obj
 
-    if isinstance(obj, dict):
+    if isinstance(obj, str):
         return deserialize_atoms(obj)
+
+    if isinstance(obj, dict):
+        return deserialize_atoms(json.loads(obj))
 
     if hasattr(obj, "lattice") and hasattr(obj, "sites"):
         # we assume the obj is a pymatgen Structure
