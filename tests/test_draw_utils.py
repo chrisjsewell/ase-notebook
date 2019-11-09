@@ -2,12 +2,12 @@
 import numpy as np
 import pytest
 
-from ase_notebook import core
+from ase_notebook import draw_utils
 
 
 def test_get_cell_coordinates():
     """Test coordinates of the cell lines are computed correctly."""
-    line_starts, line_ends = core.get_cell_coordinates(
+    line_starts, line_ends = draw_utils.get_cell_coordinates(
         np.array([[1, 0, 0], [0, 2, 0], [0, 0, 3]])
     )
     # print(line_starts.tolist())
@@ -44,7 +44,7 @@ def test_get_cell_coordinates():
 
 def test_get_cell_coordinates_2d():
     """Test that cells with a zero length vector return a plane."""
-    line_starts, line_ends = core.get_cell_coordinates(
+    line_starts, line_ends = draw_utils.get_cell_coordinates(
         np.array([[1, 0, 0], [0, 2, 0], [0, 0, 0]])
     )
     # print(line_starts.tolist())
@@ -87,5 +87,7 @@ def test_get_cell_coordinates_2d():
 )
 def test_get_miller_coordinates(miller, expected):
     """Test miller intercepts of the cell are computed correctly."""
-    points = core.get_miller_coordinates([[1, 0, 0], [0, 2, 0], [0, 0, 3]], miller)
+    points = draw_utils.get_miller_coordinates(
+        [[1, 0, 0], [0, 2, 0], [0, 0, 3]], miller
+    )
     assert points.tolist() == expected

@@ -15,9 +15,9 @@ from ase.gui.view import GREEN, PURPLE, View
 import attr
 import numpy as np
 
-from .atom_info import create_info_lines
-from .color import lighten_webcolor
-from .core import initialise_element_groups
+from ase_notebook.atom_info import create_info_lines
+from ase_notebook.color import lighten_webcolor
+from ase_notebook.draw_utils import initialise_element_groups
 
 
 class AtomImages(Images):
@@ -478,7 +478,7 @@ def draw_elements(
 
     Parameters
     ----------
-    element_groups : ase_notebook.core.DrawGroup
+    element_groups : ase_notebook.draw_elements.DrawGroup
     canvas : tkinter.Canvas
     celldisp : numpy.array
         cell displacement

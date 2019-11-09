@@ -1,7 +1,7 @@
 """Tests for ``ase_notebook.svg``."""
 import numpy as np
 
-from ase_notebook.svg import tessellate_rectangles
+from ase_notebook.backend.svg import tessellate_rectangles
 from ase_notebook.viewer import AseView
 
 

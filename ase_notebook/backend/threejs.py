@@ -3,13 +3,8 @@ from math import radians, sqrt, tan
 
 import numpy as np
 
-from .color import Color
-
-
-def triangle_normal(a, b, c):
-    """Compute the normal of three points."""
-    a, b, c = [np.array(i) for i in (a, b, c)]
-    return np.cross(b - a, c - a).tolist()
+from ase_notebook.color import Color
+from ase_notebook.draw_utils import triangle_normal
 
 
 class RenderContainer(object):
