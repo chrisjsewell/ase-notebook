@@ -32,6 +32,7 @@
     "restructuredtext.linter.extraArgs": ["--max-line-length", "120"],
     "cSpell.words": [
         "Deserialize",
+        "Jupyter",
         "aiida",
         "analyzer",
         "angtol",

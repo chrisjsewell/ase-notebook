@@ -16,7 +16,7 @@ def test_atoms_convert(get_test_atoms):
     assert atom_info.create_info_lines(atoms, [1, 2, 3]) == [
         "Valence Angle Fe-Fe-Fe: 60.0°, 60.0°, 60.0°"
     ]
-    assert atom_info.create_info_lines(atoms, [1, 2, 3, 4])[0][:-6] == (
+    assert atom_info.create_info_lines(atoms, [1, 2, 3, 4])[0][:27] == (
         "Dihedral Fe → Fe → Fe → S: "
     )
     # TODO on travis getting 80.6 instead of 158.3
