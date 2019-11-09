@@ -39,6 +39,8 @@ def test_make_render(get_test_atoms):
         "control_box_elements",
         "control_box_background",
     ]
+    objects = threejs.gather_3d_objects(container.element_renderer)
+    assert len(objects) == 54
 
 
 def test_create_arrow_texture():
