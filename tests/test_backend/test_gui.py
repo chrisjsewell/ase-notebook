@@ -1,16 +1,10 @@
 """Tests for ``ase_notebook.gui``."""
-import os
-import sys
-
 import pytest
 
 from ase_notebook import viewer
 
 
-@pytest.mark.skipif(
-    sys.platform != "darwin" and not os.environ.get("DISPLAY", False),
-    reason="no display available for gui",
-)
+@pytest.mark.launches_tkinter
 def test_make_gui(get_test_atoms):
     """Test ``make_gui``, from the viewer."""
     atoms = get_test_atoms("pyrite")
@@ -28,10 +22,7 @@ def test_make_gui(get_test_atoms):
         gui.exit()
 
 
-@pytest.mark.skipif(
-    sys.platform != "darwin" and not os.environ.get("DISPLAY", False),
-    reason="no display available for gui",
-)
+@pytest.mark.launches_tkinter
 def test_make_gui_occupancies(get_test_atoms):
     """Test making a GUI, with atoms that contain occupancies."""
     atoms = get_test_atoms("pyrite")
