@@ -62,7 +62,7 @@ def numpyfy(obj):
         except ValueError:
             pass
         else:
-            if a.dtype in [bool, int, float]:
+            if a.dtype in [bool, int, float] or str(a.dtype).startswith("<U"):
                 return a
         obj = [numpyfy(value) for value in obj]
     return obj
@@ -112,13 +112,13 @@ def serialize_atoms(atoms: ase.Atoms, description: str = "") -> str:
 
 def deserialize_atoms(json_string: str) -> ase.Atoms:
     """Deserialize a JSON string to an ase.Atoms instance."""
-    json_string = json.JSONDecoder(object_hook=ase_decoder_hook).decode(json_string)
+    data = json.JSONDecoder(object_hook=ase_decoder_hook).decode(json_string)
     atoms = ase.Atoms()
-    atoms.cell = json_string["cell"]
-    atoms.arrays = numpyfy(json_string["arrays"])
-    atoms.info = json_string["info"]
-    atoms.constraints = [dict2constraint(d) for d in json_string["constraints"]]
-    atoms.set_celldisp(json_string["celldisp"])
+    atoms.cell = data["cell"]
+    atoms.arrays = numpyfy(data["arrays"])
+    atoms.info = data["info"]
+    atoms.constraints = [dict2constraint(d) for d in data["constraints"]]
+    atoms.set_celldisp(data["celldisp"])
     # TODO ase.calculators.calculator.Calculator has a todict method,
     # but not clear how to convert it back
 

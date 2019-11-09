@@ -75,7 +75,7 @@ setup(
     ],
     entry_points={
         "console_scripts": [
-            "ase-notebook.view_atoms = ase_notebook.viewer:_launch_gui_exec"
+            "ase-notebook.view_atoms = ase_notebook.viewer:launch_gui_exec"
         ]
     },
 )

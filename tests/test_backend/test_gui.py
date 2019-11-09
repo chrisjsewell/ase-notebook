@@ -1,7 +1,10 @@
 """Tests for ``ase_notebook.gui``."""
+import json
+
 import pytest
 
 from ase_notebook import viewer
+from ase_notebook.atoms_convert import serialize_atoms
 
 
 @pytest.mark.launches_tkinter
@@ -42,4 +45,19 @@ def test_make_gui_occupancies(get_test_atoms):
         gui.exit()
 
 
-# Add a test that the console script is registered
+def test_launch_gui_exec(get_test_atoms):
+    """Test making a GUI, via the command-line entry point."""
+    atoms = get_test_atoms("pyrite")
+    ase_view = viewer.AseView()
+    data_str = json.dumps(
+        {
+            "atoms": serialize_atoms(atoms),
+            "config": ase_view.get_config_as_dict(),
+            "kwargs": {"launch": False},
+        }
+    )
+    gui = viewer.launch_gui_exec(data_str)
+    try:
+        pass
+    finally:
+        gui.exit()

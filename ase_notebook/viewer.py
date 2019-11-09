@@ -176,25 +176,30 @@ class AseView:
 
     def get_atom_labels(self, atoms):
         """Return mapping of atom index to text label."""
+        labels = None
         if self.config.atom_label_by == "element":
             if "occupancy" in atoms.info:
-                return [
+                labels = [
                     ",".join(atoms.info["occupancy"][t].keys())
                     for t in atoms.get_tags()
                 ]
-            return atoms.get_chemical_symbols()
-        if self.config.atom_label_by == "index":
-            return list(range(len(atoms)))
-        if self.config.atom_label_by == "tag":
-            return atoms.get_tags()
-        if self.config.atom_label_by == "magmom":
-            return atoms.get_initial_magnetic_moments()
-        if self.config.atom_label_by == "charge":
-            return atoms.get_initial_charges()
-        if self.config.atom_label_by == "array":
-            return atoms.get_array(self.config.atom_label_array)
+            else:
+                labels = atoms.get_chemical_symbols()
+        elif self.config.atom_label_by == "index":
+            labels = list(range(len(atoms)))
+        elif self.config.atom_label_by == "tag":
+            labels = atoms.get_tags()
+        elif self.config.atom_label_by == "magmom":
+            labels = atoms.get_initial_magnetic_moments()
+        elif self.config.atom_label_by == "charge":
+            labels = atoms.get_initial_charges()
+        elif self.config.atom_label_by == "array":
+            labels = atoms.get_array(self.config.atom_label_array)
 
-        raise ValueError(self.config.atom_label_by)
+        if labels is None:
+            raise ValueError(self.config.atom_label_by)
+
+        return [str(l) for l in labels]
 
     def _initialise_elements(self, atoms, center_in_uc=False, repeat_uc=(1, 1, 1)):
         """Prepare visualisation elements, in a backend agnostic manner."""
@@ -519,7 +524,7 @@ AseView.__init__.__doc__ = (
 )
 
 
-def _launch_gui_exec(json_string=None):
+def launch_gui_exec(json_string=None):
     """Launch a GUI, with a json string as input.
 
     Parameters
@@ -540,7 +545,7 @@ def _launch_gui_exec(json_string=None):
 
     atoms = deserialize_atoms(atoms_json)
     ase_view = AseView(**config_dict)
-    ase_view.make_gui(atoms, **kwargs)
+    return ase_view.make_gui(atoms, **kwargs)
 
 
 # Note: original commands (when creating SVG via tkinter postscript)
