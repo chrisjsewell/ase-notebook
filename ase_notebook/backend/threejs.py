@@ -3,13 +3,8 @@ from math import radians, sqrt, tan
 
 import numpy as np
 
-from aiida_2d.visualize import Color
-
-
-def triangle_normal(a, b, c):
-    """Compute the normal of three points."""
-    a, b, c = [np.array(i) for i in (a, b, c)]
-    return np.cross(b - a, c - a).tolist()
+from ase_notebook.color import Color
+from ase_notebook.draw_utils import triangle_normal
 
 
 class RenderContainer(object):
@@ -23,6 +18,15 @@ class RenderContainer(object):
     def __dir__(self):
         """Get the attributes."""
         return list(self._kwargs.keys())
+
+    def __iter__(self):
+        """Iterate keys."""
+        for key in self._kwargs:
+            yield key
+
+    def __len__(self):
+        """Return number of keys."""
+        return len(self._kwargs)
 
     def __getitem__(self, key):
         """Return key."""

@@ -216,7 +216,7 @@ class ContainerRGB:
 
     Provides a quick color access.
 
-    >>> from colour import RGB
+    >>> from ase_notebook.color import RGB
 
     >>> RGB.WHITE
     (1.0, 1.0, 1.0)
@@ -240,7 +240,7 @@ class ContainerHEX:
 
     Provides a quick color access.
 
-    >>> from colour import HEX
+    >>> from ase_notebook.color import HEX
 
     >>> HEX.WHITE
     '#fff'
@@ -288,7 +288,7 @@ def hsl2rgb(hsl):
 
     Here are some quick notion of HSL to RGB conversion:
 
-    >>> from colour import hsl2rgb
+    >>> from ase_notebook.color import hsl2rgb
 
     With a lightness put at 0, RGB is always rgbblack
 
@@ -379,7 +379,7 @@ def rgb2hsl(rgb):
 
     Here are some quick notion of RGB to HSL conversion:
 
-    >>> from colour import rgb2hsl
+    >>> from ase_notebook.color import rgb2hsl
 
     Note that if red amount is equal to green and blue, then you
     should have a gray value (from black to white).
@@ -505,7 +505,7 @@ def rgb2hex(rgb, force_long=False):
     Usage
     -----
 
-    >>> from colour import rgb2hex
+    >>> from ase_notebook.color import rgb2hex
 
     >>> rgb2hex((0.0,1.0,0.0))
     '#0f0'
@@ -538,7 +538,7 @@ def hex2rgb(str_rgb):
     :param str_rgb: 3 hex char or 6 hex char string representation
     :rtype: RGB 3-uple of float between 0 and 1
 
-    >>> from colour import hex2rgb
+    >>> from ase_notebook.color import hex2rgb
 
     >>> hex2rgb('#00ff00')
     (0.0, 1.0, 0.0)
@@ -582,7 +582,7 @@ def hex2web(hex_color):
     Usage
     =====
 
-    >>> from colour import hex2web
+    >>> from ase_notebook.color import hex2web
 
     >>> hex2web('#ff0000')
     'red'
@@ -631,7 +631,7 @@ def web2hex(web, force_long=False):
     Usage
     =====
 
-    >>> from colour import web2hex
+    >>> from ase_notebook.color import web2hex
 
     >>> web2hex('red')
     '#f00'
@@ -700,7 +700,7 @@ class Color(object):
     Color object keeps information of a color. It can input/output to different
     format (HSL, RGB, HEX, WEB) and their partial representation.
 
-        >>> from colour import Color, HSL
+        >>> from ase_notebook.color import Color, HSL
 
         >>> b = Color()
         >>> b.hsl = HSL.BLUE
