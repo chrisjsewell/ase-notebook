@@ -1,5 +1,4 @@
 """A module for creating visualisations of a structure."""
-import inspect
 import json
 import subprocess
 import sys
@@ -519,8 +518,7 @@ class AseView:
 
 
 AseView.__init__.__doc__ = (
-    "kwargs are used to initialise ViewConfig:"
-    f"\n{inspect.signature(ViewConfig.__init__)}"
+    "kwargs are used to initialise ViewConfig:" f"\n\n{ViewConfig.__doc__}"
 )
 
 
