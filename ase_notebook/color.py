@@ -9,25 +9,16 @@ vaab/colour is licensed under the BSD 2-Clause "Simplified" License
 This module defines several color formats that can be converted to one or
 another.
 
-Formats
--------
+**Formats**
 
-HSL:
-    3-ple of Hue, Saturation, Lightness all between 0.0 and 1.0
+- HSL: 3-ple of Hue, Saturation, Lightness all between 0.0 and 1.0
+- RGB: 3-ple of Red, Green, Blue all between 0.0 and 1.0
+- HEX: string object beginning with '#' and with red, green, blue value.
+       This format accept color in 3 or 6 value ex: '#fff' or '#ffffff'
+- WEB: string object that defaults to HEX representation or human if possible
 
-RGB:
-    3-ple of Red, Green, Blue all between 0.0 and 1.0
-
-HEX:
-    string object beginning with '#' and with red, green, blue value.
-    This format accept color in 3 or 6 value ex: '#fff' or '#ffffff'
-
-WEB:
-    string object that defaults to HEX representation or human if possible
-
-Usage
+Notes
 -----
-
 Several function exists to convert from one format to another. But all
 function are not written. So the best way is to use the object Color.
 
@@ -274,7 +265,7 @@ def hsl2rgb(hsl):
     :param h: Hue, position around the chromatic circle (h=1 equiv h=0)
     :param s: Saturation, color saturation (0=full gray, 1=full color)
     :param l: Ligthness, Overhaul lightness (0=full black, 1=full white)
-    :rtype: 3-uple for RGB values in float between 0 and 1
+    :returns: 3-uple for RGB values in float between 0 and 1
 
     Hue, Saturation, Range from Lightness is a float between 0 and 1
 
@@ -372,7 +363,7 @@ def rgb2hsl(rgb):
     :param r: Red amount (float between 0 and 1)
     :param g: Green amount (float between 0 and 1)
     :param b: Blue amount (float between 0 and 1)
-    :rtype: 3-uple for HSL values in float between 0 and 1
+    :returns: 3-uple for HSL values in float between 0 and 1
 
     This algorithm came from:
     http://www.easyrgb.com/index.php?X=MATH&H=19#text19
@@ -500,11 +491,10 @@ def rgb2hex(rgb, force_long=False):
     """Transform RGB tuple to hex RGB representation.
 
     :param rgb: RGB 3-uple of float between 0 and 1
-    :rtype: 3 hex char or 6 hex char string representation
+    :returns: 3 hex char or 6 hex char string representation
 
-    Usage
-    -----
-
+    Examples
+    --------
     >>> from ase_notebook.color import rgb2hex
 
     >>> rgb2hex((0.0,1.0,0.0))
@@ -536,7 +526,7 @@ def hex2rgb(str_rgb):
     """Transform hex RGB representation to RGB tuple.
 
     :param str_rgb: 3 hex char or 6 hex char string representation
-    :rtype: RGB 3-uple of float between 0 and 1
+    :returns: RGB 3-uple of float between 0 and 1
 
     >>> from ase_notebook.color import hex2rgb
 
@@ -574,14 +564,13 @@ def hex2web(hex_color):
     """Convert HEX representation to WEB.
 
     :param rgb: 3 hex char or 6 hex char string representation
-    :rtype: web string representation (human readable if possible)
+    :returns: web string representation (human readable if possible)
 
     WEB representation uses X11 rgb.txt to define conversion
     between RGB and english color names.
 
-    Usage
-    =====
-
+    Examples
+    --------
     >>> from ase_notebook.color import hex2web
 
     >>> hex2web('#ff0000')
@@ -623,14 +612,13 @@ def web2hex(web, force_long=False):
     """Convert WEB representation to HEX.
 
     :param rgb: web string representation (human readable if possible)
-    :rtype: 3 hex char or 6 hex char string representation
+    :returns: 3 hex char or 6 hex char string representation
 
     WEB representation uses X11 rgb.txt to define conversion
     between RGB and english color names.
 
-    Usage
-    =====
-
+    Examples
+    --------
     >>> from ase_notebook.color import web2hex
 
     >>> web2hex('red')
@@ -705,9 +693,8 @@ class Color(object):
         >>> b = Color()
         >>> b.hsl = HSL.BLUE
 
-    Access values
-    -------------
-
+    Examples
+    --------
         >>> b.hue  # doctest: +ELLIPSIS
         0.66...
         >>> b.saturation
@@ -729,8 +716,7 @@ class Color(object):
         >>> b.hex
         '#00f'
 
-    Change values
-    -------------
+    **Change values**
 
     Let's change Hue toward red tint:
 
@@ -762,8 +748,7 @@ class Color(object):
         >>> b.hex
         '#f00'
 
-    Convenience
-    -----------
+    **Convenience**
 
         >>> c = Color('blue')
         >>> c
@@ -808,8 +793,7 @@ class Color(object):
         #7f0000
 
 
-    Recursive init
-    --------------
+    **Recursive init**
 
     To support blind conversion of web strings (or already converted object),
     the Color object supports instantiation with another Color object.
@@ -817,8 +801,7 @@ class Color(object):
         >>> Color(Color(Color('red')))
         <Color red>
 
-    Equality support
-    ----------------
+    **Equality support**
 
     Default equality is RGB hex comparison:
 

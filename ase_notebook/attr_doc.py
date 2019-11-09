@@ -81,10 +81,10 @@ def autodoc(attrs_class):
 
         if field.name[0] == "_":
             name = field.name[1:]
-            help_complement = ""
+            help_complement = "  "
         else:
             name = field.name
-            help_complement = ""
+            help_complement = "  "
             # (
             #     "This value is accessible, after initialization, "
             #     f"via the ``{field.name}`` attribute. "
@@ -113,7 +113,7 @@ def autodoc(attrs_class):
             )
         else:
             description = help_complement
-            warnings.warn(f"Field {field_fn} not documented.")
+            # warnings.warn(f"Field {field_fn} not documented.")
 
         return title + "\n" + description
 

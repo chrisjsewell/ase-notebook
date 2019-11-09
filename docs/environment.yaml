@@ -1,0 +1,9 @@
+channels:
+  - conda-forge
+dependencies:
+  - python =3.6
+  - pandoc =2.6
+  - docutils >=0.15
+  - ipypublish >=0.10.10
+  - importlib_resources
+  - pythreejs
