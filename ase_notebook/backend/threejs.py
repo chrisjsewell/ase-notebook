@@ -19,6 +19,15 @@ class RenderContainer(object):
         """Get the attributes."""
         return list(self._kwargs.keys())
 
+    def __iter__(self):
+        """Iterate keys."""
+        for key in self._kwargs:
+            yield key
+
+    def __len__(self):
+        """Return number of keys."""
+        return len(self._kwargs)
+
     def __getitem__(self, key):
         """Return key."""
         return self._kwargs[key]
