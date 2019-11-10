@@ -24,16 +24,21 @@ ase-notebook
    api_index
 
 
-A highly configurable 2D (SVG) &amp; 3D (threejs) visualisation creator,
+A highly configurable 2D (SVG) & 3D (threejs) visualisation creator,
 for ASE/Pymatgen structures, within the `Jupyter`_ Notebook.
 
-Purpose
--------
+.. figure:: images/example_vis.*
+    :width: 50%
+    :align: center
+    :alt: example SVG
+
+.. Purpose
+.. -------
 
 .. TODO purpose
 
-Features
---------
+.. Features
+.. --------
 
 .. TODO features
 

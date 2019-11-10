@@ -53,6 +53,30 @@ ipysphinx_show_prompts = True
 # ipysphinx_input_prompt = "In:"
 # ipysphinx_output_prompt = "Out:"
 
+git_commands = ["git", "rev-parse", "HEAD"]
+try:
+    git_commit = subprocess.check_output(git_commands).decode("utf8").strip()
+except subprocess.CalledProcessError:
+    git_commit = "v{}".format(ase_notebook.__version__)
+
+ipysphinx_prolog = r"""
+{{% set docname = env.doc2path(env.docname, base='docs/source') %}}
+
+.. only:: html
+
+    .. role:: raw-html(raw)
+        :format: html
+
+    .. nbinfo::
+
+        This page was generated from `{{{{ docname }}}}`__.
+
+    __ https://github.com/chrisjsewell/ase-notebook/blob/{git_commit}/{{{{ docname }}}}
+
+""".format(
+    git_commit=git_commit
+)  # noqa: E501
+
 intersphinx_mapping = {
     "python": ("https://docs.python.org/3.6", None),
     "ase": ("https://wiki.fysik.dtu.dk/ase/", None),

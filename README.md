@@ -10,7 +10,7 @@
 A highly configurable 2D (SVG) &amp; 3D (threejs) visualisation creator for ASE/Pymatgen structures,
 within the Jupyter Notebook.
 
-![Example SVG](./example_vis.svg)
+![Example SVG](/docs/source/images/example_vis.svg)
 
 ## Purpose
 

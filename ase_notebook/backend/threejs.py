@@ -455,7 +455,13 @@ def create_world_axes(
     )
     ax_camera.up = camera.up
     ax_renderer = pjs.Renderer(
-        scene=ax_scene, camera=ax_camera, width=canvas_width, height=canvas_height
+        scene=ax_scene,
+        camera=ax_camera,
+        width=canvas_width,
+        height=canvas_height,
+        alpha=True,
+        clearOpacity=0.0,
+        clearColor="white",
     )
 
     def align_axes(change=None):

@@ -13,6 +13,7 @@ setup(
     maintainer_email="chrisj_sewell@hotmail.com",
     license="MIT",
     url="https://github.com/chrisjsewell/ase-notebook",
+    project_urls={"Documentation": "https://ase-notebook.readthedocs.io/"},
     description=(
         "Highly configurable 2D (SVG) & 3D (threejs) visualisations "
         "for ASE/Pymatgen structures, within the Jupyter Notebook"
