@@ -4,8 +4,8 @@
 [![Coverage](https://coveralls.io/repos/github/chrisjsewell/ase-notebook/badge.svg?branch=develop)](https://coveralls.io/github/chrisjsewell/ase-notebook?branch=develop)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/ambv/black)
 [![RTD](https://readthedocs.org/projects/ase-notebook/badge)](http://ase-notebook.readthedocs.io/)
-<!-- [![PyPI](https://img.shields.io/pypi/v/ase-notebook.svg)](https://pypi.org/project/ase-notebook)
-[![Conda](https://anaconda.org/conda-forge/ase-notebook/badges/version.svg)](https://anaconda.org/conda-forge/ase-notebook) -->
+[![PyPI](https://img.shields.io/pypi/v/ase-notebook.svg)](https://pypi.org/project/ase-notebook)
+[![Conda](https://anaconda.org/conda-forge/ase-notebook/badges/version.svg)](https://anaconda.org/conda-forge/ase-notebook)
 
 A highly configurable 2D (SVG) &amp; 3D (threejs) visualisation creator for ASE/Pymatgen structures,
 within the Jupyter Notebook.
