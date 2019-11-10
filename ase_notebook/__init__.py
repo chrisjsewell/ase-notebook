@@ -10,4 +10,4 @@ except ImportError:
     # before dependencies are installed
     pass
 
-__version__ = "0.1.0"
+__version__ = "0.3.0"
