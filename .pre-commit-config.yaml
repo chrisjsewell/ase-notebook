@@ -32,6 +32,7 @@
     entry: doc8
     language: system
     types: [rst]
+    exclude: docs/build/*
     name: doc8 - Lint the documentation.
 
   - id: travis-linter

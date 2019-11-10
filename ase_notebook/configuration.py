@@ -5,6 +5,7 @@ from typing import Tuple, Union
 import attr
 from attr.validators import in_, instance_of
 
+from .attr_doc import autodoc
 from .color import Color
 
 
@@ -47,6 +48,7 @@ def is_html_color(self, attribute, value):
         )
 
 
+@autodoc
 @attr.s(slots=True)
 class MillerPlane:
     """A data class to define a Miller Plane to visualise."""
@@ -90,6 +92,7 @@ def convert_to_miller_dicts(iterable):
     return tuple(output)
 
 
+@autodoc
 @attr.s(kw_only=True)
 class ViewConfig:
     """Configuration settings for initialisation of atom visualisations."""

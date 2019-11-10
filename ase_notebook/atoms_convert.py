@@ -1,8 +1,7 @@
-"""module for serializing ``ase.Atoms``.
-
-Note: there is a json serializer in ``ase.io.jsonio``,
-but it doesn't actually store all the data
-"""
+"""Module for serializing ``ase.Atoms``."""
+# TODO very recent versions of ase.Atoms have `todict` and `fromdict` methods, ands
+# see: https://gitlab.com/ase/ase/atoms.py and
+# https://gitlab.com/ase/ase/blob/master/ase/io/jsonio.py
 import datetime
 import json
 
@@ -28,17 +27,31 @@ class ASEEncoder(json.JSONEncoder):
                 d["__ase_objtype__"] = obj.ase_objtype
 
             return d
-        if isinstance(obj, np.ndarray) or hasattr(obj, "__array__"):
-            if obj.dtype == complex:
-                return {"__complex_ndarray__": (obj.real.tolist(), obj.imag.tolist())}
-            return obj.tolist()
+        if isinstance(obj, np.ndarray):
+            flatobj = obj.ravel()
+            if np.iscomplexobj(obj):
+                flatobj.dtype = obj.real.dtype
+            return {"__ndarray__": (obj.shape, str(obj.dtype), flatobj.tolist())}
         if isinstance(obj, np.integer):
             return int(obj)
         if isinstance(obj, np.bool_):
             return bool(obj)
         if isinstance(obj, datetime.datetime):
             return {"__datetime__": obj.isoformat()}
+        if isinstance(obj, complex):
+            return {"__complex__": (obj.real, obj.imag)}
+
         return json.JSONEncoder.default(self, obj)
+
+
+def create_ndarray(shape, dtype, data):
+    """Create ndarray from shape, dtype and flattened data."""
+    array = np.empty(shape, dtype=dtype)
+    flatbuf = array.ravel()
+    if np.iscomplexobj(array):
+        flatbuf.dtype = array.real.dtype
+    flatbuf[:] = data
+    return array
 
 
 def try_int(obj):
@@ -72,6 +85,13 @@ def ase_decoder_hook(dct):
     """JSON decoder hook for ase.Atoms de-serialization."""
     if "__datetime__" in dct:
         return datetime.datetime.strptime(dct["__datetime__"], "%Y-%m-%dT%H:%M:%S.%f")
+    if "__complex__" in dct:
+        return complex(*dct["__complex__"])
+
+    if "__ndarray__" in dct:
+        return create_ndarray(*dct["__ndarray__"])
+
+    # No longer used (only here for backwards compatibility):
     if "__complex_ndarray__" in dct:
         r, i = (np.array(x) for x in dct["__complex_ndarray__"])
         return r + i * 1j
@@ -83,7 +103,10 @@ def ase_decoder_hook(dct):
         if objtype == "cell":
             from ase.cell import Cell
 
+            pbc = dct.pop("pbc", None)
             obj = Cell(**dct)
+            if pbc is not None:
+                obj._pbc = pbc
         else:
             raise RuntimeError(
                 "Do not know how to decode object type {} "

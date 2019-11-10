@@ -67,5 +67,21 @@
         "FIXME",
         "NOTE"
     ],
+    "todo-tree.highlights.customHighlight": {
+        "NOTE": {
+            "icon": "check",
+            "type": "tag",
+            "foreground": "green",
+            "background": "white",
+            "opacity": 10
+        }
+    },
+    "todo-tree.highlights.defaultHighlight": {
+        "icon": "alert",
+        "type": "tag",
+        "foreground": "#FFA500",
+        "background": "white",
+        "opacity": 10
+    },
     "svg.preview.background": "transparent"
 }

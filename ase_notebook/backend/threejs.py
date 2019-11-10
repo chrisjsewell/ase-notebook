@@ -455,7 +455,13 @@ def create_world_axes(
     )
     ax_camera.up = camera.up
     ax_renderer = pjs.Renderer(
-        scene=ax_scene, camera=ax_camera, width=canvas_width, height=canvas_height
+        scene=ax_scene,
+        camera=ax_camera,
+        width=canvas_width,
+        height=canvas_height,
+        alpha=True,
+        clearOpacity=0.0,
+        clearColor="white",
     )
 
     def align_axes(change=None):
@@ -557,7 +563,7 @@ def make_basic_gui(container):
     axes = [container.axes_renderer] if "axes_renderer" in container else []
 
     info_box = ipyw.HTML(
-        value="Double-click atom for info.",
+        value="",  # "Double-click atom for info (requires active kernel).",
         color="grey",
         layout=ipyw.Layout(
             max_height="10px", margin="0px 0px 0px 0px", align_self="flex-start"

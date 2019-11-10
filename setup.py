@@ -13,7 +13,11 @@ setup(
     maintainer_email="chrisj_sewell@hotmail.com",
     license="MIT",
     url="https://github.com/chrisjsewell/ase-notebook",
-    description="Highly configurable 2D (SVG) & 3D (threejs) visualisation creator for ASE/Pymatgen structures",
+    project_urls={"Documentation": "https://ase-notebook.readthedocs.io/"},
+    description=(
+        "Highly configurable 2D (SVG) & 3D (threejs) visualisations "
+        "for ASE/Pymatgen structures, within the Jupyter Notebook"
+    ),
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",
     packages=find_packages(),
@@ -51,6 +55,7 @@ setup(
             "pre-commit==1.17.0",
             "flake8<3.8.0,>=3.7.0",
             "doc8<0.9.0,>=0.8.0",
+            "pygments",  # required by doc8
         ],
         "flake8_plugins": [
             "flake8-comprehensions",
@@ -58,7 +63,7 @@ setup(
             "flake8_builtins",
             "import-order",
         ],
-        "docs": ["sphinx>=1.6", "sphinx_rtd_theme", "ipypublish>=0.10.7"],
+        "docs": ["sphinx>=1.8", "sphinx_rtd_theme", "ipypublish>=0.10.10", "ipython"],
     },
     classifiers=[
         "Development Status :: 4 - Beta",
