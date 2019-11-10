@@ -14,7 +14,7 @@ def generate_svg_elements(element_group, element_colors=None, background_color="
 
     Parameters
     ----------
-    element_group : aiida_2d.visualize.core.DrawGroup
+    element_group : ase_notebook.draw_elements.DrawGroup
         Container of all element groups to be created.
     background_color : str
 

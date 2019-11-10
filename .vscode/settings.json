@@ -1,0 +1,87 @@
+{
+    "editor.rulers": [
+        88, 120
+    ],
+    "files.exclude": {
+        "**/.git": true,
+        "**/.svn": true,
+        "**/.hg": true,
+        "**/CVS": true,
+        "**/.DS_Store": true,
+        "**/__pycache__": true,
+        "**/.ipynb_checkpoints": true,
+        "**/.pytest_cache": true,
+        "**/.eggs": true
+    },
+
+    "python.pythonPath": "/anaconda/envs/aiida_crystal17/bin/python",
+    "python.formatting.provider": "black",
+    "python.linting.enabled": true,
+    "python.linting.flake8Enabled": true,
+    "python.linting.flake8CategorySeverity.W": "Error",
+    "python.linting.flake8CategorySeverity.F": "Error",
+    "python.linting.flake8CategorySeverity.E": "Error",
+    "python.testing.unittestEnabled": false,
+    "python.testing.nosetestsEnabled": false,
+    "python.testing.pytestEnabled": false,
+
+    // "autoDocstring.customTemplatePath": "/Users/cjs14/GitHub/ase-notebook/.vscode/docstring.mustache",
+    "autoDocstring.docstringFormat": "numpy",
+    "restructuredtext.preview.sphinx.disabled": true,
+    "restructuredtext.confPath": "${workspaceFolder}/docs/source",
+    "restructuredtext.linter.extraArgs": ["--max-line-length", "120"],
+    "cSpell.words": [
+        "Deserialize",
+        "Jupyter",
+        "aiida",
+        "analyzer",
+        "angtol",
+        "asarray",
+        "atol",
+        "color",
+        "dtype",
+        "fcoords",
+        "ftol",
+        "isclose",
+        "isometry",
+        "marcasite",
+        "math",
+        "noqa",
+        "pymatgen",
+        "pytest",
+        "rasterized",
+        "rasterizing",
+        "rtol",
+        "struct",
+        "symmorphic",
+        "symop",
+        "symops",
+        "symprec",
+        "tolist"
+    ],
+    "python.linting.pylintEnabled": false,
+    "todo-tree.regex.regex": "((//|#-?|<!--|\\.\\.|;|/\\*|^)\\s*($TAGS)|^\\s*- \\[ \\])",
+    "todo-tree.general.tags": [
+        "TODO",
+        "todo::",
+        "FIXME",
+        "NOTE"
+    ],
+    "todo-tree.highlights.customHighlight": {
+        "NOTE": {
+            "icon": "check",
+            "type": "tag",
+            "foreground": "green",
+            "background": "white",
+            "opacity": 10
+        }
+    },
+    "todo-tree.highlights.defaultHighlight": {
+        "icon": "alert",
+        "type": "tag",
+        "foreground": "#FFA500",
+        "background": "white",
+        "opacity": 10
+    },
+    "svg.preview.background": "transparent"
+}

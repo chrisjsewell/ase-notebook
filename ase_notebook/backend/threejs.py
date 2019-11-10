@@ -3,13 +3,8 @@ from math import radians, sqrt, tan
 
 import numpy as np
 
-from aiida_2d.visualize import Color
-
-
-def triangle_normal(a, b, c):
-    """Compute the normal of three points."""
-    a, b, c = [np.array(i) for i in (a, b, c)]
-    return np.cross(b - a, c - a).tolist()
+from ase_notebook.color import Color
+from ase_notebook.draw_utils import triangle_normal
 
 
 class RenderContainer(object):
@@ -23,6 +18,15 @@ class RenderContainer(object):
     def __dir__(self):
         """Get the attributes."""
         return list(self._kwargs.keys())
+
+    def __iter__(self):
+        """Iterate keys."""
+        for key in self._kwargs:
+            yield key
+
+    def __len__(self):
+        """Return number of keys."""
+        return len(self._kwargs)
 
     def __getitem__(self, key):
         """Return key."""
@@ -451,7 +455,13 @@ def create_world_axes(
     )
     ax_camera.up = camera.up
     ax_renderer = pjs.Renderer(
-        scene=ax_scene, camera=ax_camera, width=canvas_width, height=canvas_height
+        scene=ax_scene,
+        camera=ax_camera,
+        width=canvas_width,
+        height=canvas_height,
+        alpha=True,
+        clearOpacity=0.0,
+        clearColor="white",
     )
 
     def align_axes(change=None):
@@ -553,7 +563,7 @@ def make_basic_gui(container):
     axes = [container.axes_renderer] if "axes_renderer" in container else []
 
     info_box = ipyw.HTML(
-        value="Double-click atom for info.",
+        value="",  # "Double-click atom for info (requires active kernel).",
         color="grey",
         layout=ipyw.Layout(
             max_height="10px", margin="0px 0px 0px 0px", align_self="flex-start"

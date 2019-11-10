@@ -1,242 +1,43 @@
 """A module for creating visualisations of a structure."""
-from collections import Mapping
-import importlib
-import inspect
 import json
 import subprocess
 import sys
 from time import sleep
-from typing import Tuple, Union
+from typing import Union
 
-import ase
 from ase.data import covalent_radii as ase_covalent_radii
 from ase.data.colors import jmol_colors as ase_element_colors
 import attr
-from attr.validators import in_, instance_of
 import numpy as np
 
-from aiida_2d.visualize.atom_info import create_info_lines
-from aiida_2d.visualize.color import Color, lighten_webcolor
-from aiida_2d.visualize.core import (
-    compute_projection,
-    get_rotation_matrix,
-    initialise_element_groups,
-    VESTA_ELEMENT_INFO,
-)
-from aiida_2d.visualize.gui import AtomGui, AtomImages
-from aiida_2d.visualize.svg import (
+from .atom_info import create_info_lines
+from .atoms_convert import convert_to_atoms, deserialize_atoms, serialize_atoms
+from .backend.gui import AtomGui, AtomImages
+from .backend.svg import (
     create_axes_elements,
     create_svg_document,
     generate_svg_elements,
 )
-from aiida_2d.visualize.threejs import (
+from .backend.threejs import (
     create_world_axes,
     generate_3js_render,
     make_basic_gui,
     RenderContainer,
 )
-
-
-def in_range(minimum=None, maximum=None):
-    """Validate that an attribute value is a number >= 0."""  # noqa: D202
-
-    def _validate(self, attribute, value):
-        raise_error = False
-        if not isinstance(value, (int, float)):
-            raise_error = True
-        elif minimum is not None and value < minimum:
-            raise_error = True
-        elif maximum is not None and value > maximum:
-            raise_error = True
-        if raise_error:
-            raise TypeError(
-                f"'{attribute.name}' must be a number in range [{minimum},{maximum}] "
-                f"(got {value!r} that is a {value.__class__!r}).",
-                attribute,
-                (int, float),
-                value,
-            )
-
-    return _validate
-
-
-def is_html_color(self, attribute, value):
-    """Validate that an attribute value is a valid HTML color."""
-    try:
-        if not isinstance(value, str):
-            raise TypeError
-        Color(value)
-    except Exception:
-        raise TypeError(
-            f"'{attribute.name}' must be a valid hex color (got {value!r} that is a "
-            f"{value.__class__!r}).",
-            attribute,
-            str,
-            value,
-        )
-
-
-@attr.s(slots=True)
-class MillerPlane:
-    """A data class to define a Miller Plane to visualise."""
-
-    h: float = attr.ib(default=0, validator=instance_of((float, int)))
-    k: float = attr.ib(default=0, validator=instance_of((float, int)))
-    l: float = attr.ib(default=0, validator=instance_of((float, int)))
-    fill_color: str = attr.ib(default="red", validator=is_html_color)
-    stroke_color: str = attr.ib(default="red", validator=is_html_color)
-    stroke_width: float = attr.ib(default=1.0, validator=in_range(0))
-    fill_opacity: float = attr.ib(default=0.5, validator=in_range(0, 1))
-    stroke_opacity: float = attr.ib(default=0.9, validator=in_range(0, 1))
-
-    @h.validator
-    def _validate_h(self, attribute, value):
-        if not any([self.h, self.k, self.l]):
-            raise ValueError("at least one of h, k, l must be non-zero")
-
-    @k.validator
-    def _validate_k(self, attribute, value):
-        if not any([self.h, self.k, self.l]):
-            raise ValueError("at least one of h, k, l must be non-zero")
-
-    @l.validator
-    def _validate_l(self, attribute, value):
-        if not any([self.h, self.k, self.l]):
-            raise ValueError("at least one of h, k, l must be non-zero")
-
-
-def convert_to_miller_dicts(iterable):
-    """Convert items in a list to MillerPlane validated dictionaries."""
-    output = []
-    for miller in iterable:
-        if isinstance(miller, MillerPlane):
-            pass
-        elif isinstance(miller, Mapping):
-            miller = MillerPlane(**miller)
-        else:
-            miller = MillerPlane(*miller)
-        output.append(attr.asdict(miller))
-    return tuple(output)
-
-
-@attr.s(kw_only=True)
-class ViewConfig:
-    """Configuration settings for initialisation of atom visualisations."""
-
-    rotations: str = attr.ib(default="", validator=instance_of(str))
-    # string format of unit cell rotations '50x,-10y,120z' (note: order matters)
-    element_colors: str = attr.ib(default="ase", validator=in_(("ase", "vesta")))
-    element_radii: str = attr.ib(default="ase", validator=in_(("ase", "vesta")))
-    radii_scale: float = attr.ib(default=0.89, validator=in_range(0))
-    atom_show_label: bool = attr.ib(default=True, validator=instance_of(bool))
-    atom_label_by: str = attr.ib(
-        default="element",
-        validator=in_(("element", "index", "tag", "magmom", "charge", "array")),
-    )
-    atom_label_array: str = attr.ib(default="", validator=instance_of(str))
-    atom_font_size: int = attr.ib(default=14, validator=[instance_of(int), in_range(1)])
-    atom_font_color: str = attr.ib(default="black", validator=is_html_color)
-    atom_stroke_width: float = attr.ib(default=1.0, validator=in_range(0))
-    atom_stroke_opacity: float = attr.ib(default=0.95, validator=in_range(0, 1))
-    atom_color_by: str = attr.ib(
-        default="element",
-        validator=in_(
-            (
-                "element",
-                "index",
-                "tag",
-                "magmom",
-                "charge",
-                "velocity",
-                "color_array",
-                "value_array",
-            )
-        ),
-    )
-    atom_color_array: str = attr.ib(default="", validator=instance_of(str))
-    atom_colormap: str = attr.ib(default="jet", validator=instance_of(str))
-    atom_colormap_range: Union[list, tuple] = attr.ib(
-        default=(None, None), validator=instance_of((list, tuple))
-    )
-    atom_lighten_by_depth: float = attr.ib(default=0.0, validator=in_range(0))
-    # Fraction (0 to 1) by which to lighten atom colors,
-    # based on their fractional distance along the line from the
-    # maximum to minimum z-coordinate of all elements
-    atom_opacity: float = attr.ib(default=0.95, validator=in_range(0, 1))
-    force_vector_scale: float = attr.ib(default=1.0, validator=in_range(0))
-    velocity_vector_scale: float = attr.ib(default=1.0, validator=in_range(0))
-    ghost_stroke_width: float = attr.ib(default=0.0, validator=in_range(0))
-    ghost_lighten: float = attr.ib(default=0.0, validator=in_range(0))
-    ghost_opacity: float = attr.ib(default=0.4, validator=in_range(0, 1))
-    ghost_stroke_opacity: float = attr.ib(default=0.4, validator=in_range(0, 1))
-    ghost_show_label: bool = attr.ib(default=False, validator=instance_of(bool))
-    ghost_cross_out: bool = attr.ib(default=False, validator=instance_of(bool))
-    show_unit_cell: bool = attr.ib(default=True, validator=instance_of(bool))
-    show_uc_repeats: Union[bool, list] = attr.ib(
-        default=False, validator=instance_of((bool, list, tuple))
-    )
-    uc_dash_pattern: Union[None, tuple] = attr.ib(default=None)
-    uc_color: str = attr.ib(default="black", validator=is_html_color)
-    show_bonds: bool = attr.ib(default=False, validator=instance_of(bool))
-    bond_opacity: float = attr.ib(default=0.8, validator=in_range(0, 1))
-    show_miller_planes: bool = attr.ib(default=True, validator=instance_of(bool))
-    miller_planes: Tuple[dict] = attr.ib(
-        default=(), converter=convert_to_miller_dicts, validator=instance_of(tuple)
-    )
-    miller_as_lines: bool = attr.ib(default=False, validator=instance_of(bool))
-    show_axes: bool = attr.ib(default=True, validator=instance_of(bool))
-    axes_length: float = attr.ib(default=15, validator=in_range(0))
-    axes_font_size: int = attr.ib(default=14, validator=[instance_of(int), in_range(1)])
-    axes_line_color: str = attr.ib(default="black", validator=is_html_color)
-    canvas_size: Tuple[float, float] = attr.ib(
-        default=(400, 400), validator=instance_of((list, tuple))
-    )
-    canvas_color_foreground: str = attr.ib(default="#000000", validator=is_html_color)
-    canvas_color_background: str = attr.ib(default="#ffffff", validator=is_html_color)
-    canvas_background_opacity: float = attr.ib(default=0.0, validator=in_range(0, 1))
-    canvas_crop: Union[list, tuple, None] = attr.ib(default=None)
-    zoom: float = attr.ib(default=1.0, validator=in_range(0))
-    camera_fov: float = attr.ib(default=10.0, validator=in_range(1))
-    gui_swap_mouse: bool = attr.ib(default=False, validator=instance_of(bool))
-
-    @uc_dash_pattern.validator
-    def _validate_uc_dash_pattern(self, attribute, value):
-        """Validate uc_dash_pattern is of form (solid, gap)."""
-        if value is None:
-            return
-        if not isinstance(value, (list, tuple)) or len(value) != 2:
-            raise TypeError(
-                f"'{attribute.name}' must be of the form (line_length, gap_length)."
-            )
-        if value[0] <= 0 or value[1] <= 0:
-            raise TypeError(
-                f"'{attribute.name}' (line_length, gap_length) must have positive lengths."
-            )
-
-    @canvas_crop.validator
-    def _validate_canvas_crop(self, attribute, value):
-        """Validate crop is of form (left, right, top, bottom)."""
-        if value is None:
-            return
-        if not isinstance(value, (list, tuple)) or len(value) != 4:
-            raise TypeError(
-                f"'{attribute.name}' must be of the form (left, right, top, bottom)."
-            )
-
-    def __setattr__(self, key, value):
-        """Add attr conversion and validation when setting attributes."""
-        x_attr = getattr(attr.fields(self.__class__), key)  # type: attr.Attribute
-        if x_attr.converter:
-            value = x_attr.converter(value)
-        if x_attr.validator:
-            x_attr.validator(self, x_attr, value)
-        super().__setattr__(key, value)
+from .color import lighten_webcolor
+from .configuration import ViewConfig
+from .data import load_data_file
+from .draw_utils import (
+    compute_projection,
+    get_rotation_matrix,
+    initialise_element_groups,
+)
 
 
 class AseView:
     """Class for visualising ``ase.Atoms`` or ``pymatgen.Structure``."""
 
-    def __init__(self, config=None, **kwargs):
+    def __init__(self, config: Union[None, ViewConfig] = None, **kwargs):
         """This is replaced by ``SVGConfig`` docstring."""  # noqa: D401
         if config is not None:
             self._config = config
@@ -249,8 +50,16 @@ class AseView:
         return self._config
 
     def get_config_as_dict(self):
-        """Return the configuration as a dictionary."""
+        """Return the configuration as a JSONable dictionary."""
         return attr.asdict(self._config)
+
+    def get_input_as_dict(self, atoms, **kwargs):
+        """Return the configuration, atoms and kwargs as a JSONable dictionary."""
+        return {
+            "config": attr.asdict(self._config),
+            "atoms": serialize_atoms(convert_to_atoms(atoms)),
+            "kwargs": kwargs,
+        }
 
     def add_miller_plane(
         self,
@@ -307,9 +116,10 @@ class AseView:
                 for c in ase_element_colors
             ]
         if self.config.element_colors == "vesta":
+            data = load_data_file("vesta_element_data.json")
             return [
-                "#{0:02X}{1:02X}{2:02X}".format(*(int(x * 255) for x in d[4:]))
-                for d in VESTA_ELEMENT_INFO
+                "#{0:02X}{1:02X}{2:02X}".format(*(int(x * 255) for x in (r, g, b)))
+                for r, g, b in zip(data["r"], data["g"], data["b"])
             ]
         raise ValueError(self.config.element_colors)
 
@@ -318,7 +128,8 @@ class AseView:
         if self.config.element_radii == "ase":
             return ase_covalent_radii.copy()
         if self.config.element_radii == "vesta":
-            return [d[1] for d in VESTA_ELEMENT_INFO]
+            data = load_data_file("vesta_element_data.json")
+            return data["radius"]
         raise ValueError(self.config.element_radii)
 
     def get_atom_colors(self, atoms):
@@ -364,60 +175,36 @@ class AseView:
 
     def get_atom_labels(self, atoms):
         """Return mapping of atom index to text label."""
+        labels = None
         if self.config.atom_label_by == "element":
             if "occupancy" in atoms.info:
-                return [
+                labels = [
                     ",".join(atoms.info["occupancy"][t].keys())
                     for t in atoms.get_tags()
                 ]
-            return atoms.get_chemical_symbols()
-        if self.config.atom_label_by == "index":
-            return list(range(len(atoms)))
-        if self.config.atom_label_by == "tag":
-            return atoms.get_tags()
-        if self.config.atom_label_by == "magmom":
-            return atoms.get_initial_magnetic_moments()
-        if self.config.atom_label_by == "charge":
-            return atoms.get_initial_charges()
-        if self.config.atom_label_by == "array":
-            return atoms.get_array(self.config.atom_label_array)
+            else:
+                labels = atoms.get_chemical_symbols()
+        elif self.config.atom_label_by == "index":
+            labels = list(range(len(atoms)))
+        elif self.config.atom_label_by == "tag":
+            labels = atoms.get_tags()
+        elif self.config.atom_label_by == "magmom":
+            labels = atoms.get_initial_magnetic_moments()
+        elif self.config.atom_label_by == "charge":
+            labels = atoms.get_initial_charges()
+        elif self.config.atom_label_by == "array":
+            labels = atoms.get_array(self.config.atom_label_array)
 
-        raise ValueError(self.config.atom_label_by)
+        if labels is None:
+            raise ValueError(self.config.atom_label_by)
 
-    @staticmethod
-    def convert_atoms(atoms, to_structure=False):
-        """Convert ``pymatgen.Structure`` to/from ``ase.Atoms``.
-
-        We preserve site properties, by storing them as arrays.
-        """
-        if isinstance(atoms, ase.Atoms) and not to_structure:
-            return atoms
-
-        from pymatgen import Structure
-        from pymatgen.io.ase import AseAtomsAdaptor
-
-        if isinstance(atoms, ase.Atoms) and to_structure:
-            return AseAtomsAdaptor.get_structure(atoms)
-
-        if isinstance(atoms, Structure) and not to_structure:
-            structure = atoms
-            atoms = AseAtomsAdaptor.get_atoms(atoms)
-            for key, array in structure.site_properties.items():
-                if key not in atoms.arrays:
-                    atoms.set_array(key, np.array(array))
-            # TODO propagate partial occupancies
-            return atoms
-
-        if isinstance(atoms, Structure) and to_structure:
-            return atoms
-
-        raise TypeError(f"atoms class not recognised: {atoms.__class__}")
+        return [str(l) for l in labels]
 
     def _initialise_elements(self, atoms, center_in_uc=False, repeat_uc=(1, 1, 1)):
         """Prepare visualisation elements, in a backend agnostic manner."""
         config = self._config
 
-        atoms = self.convert_atoms(atoms)
+        atoms = convert_to_atoms(atoms)
 
         if center_in_uc:
             atoms.center()
@@ -657,18 +444,16 @@ class AseView:
         :param test_init: wait for a x seconds, then test whether the process initialized without error.
 
         """
-        structure = self.convert_atoms(atoms, to_structure=True)
-        struct_data = structure.as_dict()
-        config_data = self.get_config_as_dict()
+        atoms = convert_to_atoms(atoms)
         data_str = json.dumps(
             {
-                "structure": struct_data,
-                "config": config_data,
+                "atoms": serialize_atoms(atoms),
+                "config": self.get_config_as_dict(),
                 "kwargs": {"center_in_uc": center_in_uc, "repeat_uc": repeat_uc},
             }
         )
         process = subprocess.Popen(
-            "aiida-2d.view_atoms", stdin=subprocess.PIPE, stderr=subprocess.PIPE
+            "ase-notebook.view_atoms", stdin=subprocess.PIPE, stderr=subprocess.PIPE
         )
         process.stdin.write(data_str.encode())
         process.stdin.close()
@@ -733,12 +518,11 @@ class AseView:
 
 
 AseView.__init__.__doc__ = (
-    "kwargs are used to initialise ViewConfig:"
-    f"\n{inspect.signature(ViewConfig.__init__)}"
+    "kwargs are used to initialise ViewConfig:" f"\n\n{ViewConfig.__doc__}"
 )
 
 
-def _launch_gui_exec(json_string=None):
+def launch_gui_exec(json_string=None):
     """Launch a GUI, with a json string as input.
 
     Parameters
@@ -753,17 +537,13 @@ def _launch_gui_exec(json_string=None):
             raise IOError("stdin is empty")
         json_string = sys.stdin.read()
     data = json.loads(json_string)
-    structure_dict = data.pop("structure", {})
+    atoms_json = data.pop("atoms", {})
     config_dict = data.pop("config", {})
     kwargs = data.pop("kwargs", {})
 
-    module = importlib.import_module(structure_dict["@module"])
-    klass = getattr(module, structure_dict["@class"])
-    structure = klass.from_dict(
-        {k: v for k, v in structure_dict.items() if not k.startswith("@")}
-    )
+    atoms = deserialize_atoms(atoms_json)
     ase_view = AseView(**config_dict)
-    ase_view.make_gui(structure, **kwargs)
+    return ase_view.make_gui(atoms, **kwargs)
 
 
 # Note: original commands (when creating SVG via tkinter postscript)
