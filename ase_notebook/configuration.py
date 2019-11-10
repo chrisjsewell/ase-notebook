@@ -97,21 +97,70 @@ def convert_to_miller_dicts(iterable):
 class ViewConfig:
     """Configuration settings for initialisation of atom visualisations."""
 
-    rotations: str = attr.ib(default="", validator=instance_of(str))
-    # string format of unit cell rotations '50x,-10y,120z' (note: order matters)
-    element_colors: str = attr.ib(default="ase", validator=in_(("ase", "vesta")))
-    element_radii: str = attr.ib(default="ase", validator=in_(("ase", "vesta")))
-    radii_scale: float = attr.ib(default=0.89, validator=in_range(0))
-    atom_show_label: bool = attr.ib(default=True, validator=instance_of(bool))
+    rotations: str = attr.ib(
+        default="",
+        validator=instance_of(str),
+        metadata={
+            "help": (
+                "Initial unit cell rotation in string format, "
+                "e.g. '50x,-10y,120z' (note: order matters)"
+            )
+        },
+    )
+    element_colors: str = attr.ib(
+        default="ase",
+        validator=in_(("ase", "vesta")),
+        metadata={
+            "help": "Element to color mapping to use, if ``atom_color_by='element'``."
+        },
+    )
+    element_radii: str = attr.ib(
+        default="ase",
+        validator=in_(("ase", "vesta")),
+        metadata={"help": "Element to color mapping to use."},
+    )
+    radii_scale: float = attr.ib(
+        default=0.89,
+        validator=in_range(0),
+        metadata={"help": "Scale all radii by this value."},
+    )
+    atom_show_label: bool = attr.ib(
+        default=True,
+        validator=instance_of(bool),
+        metadata={"help": "Add atom labels to visualisation."},
+    )
     atom_label_by: str = attr.ib(
         default="element",
         validator=in_(("element", "index", "tag", "magmom", "charge", "array")),
+        metadata={"help": "Atom property to label atoms by."},
     )
-    atom_label_array: str = attr.ib(default="", validator=instance_of(str))
-    atom_font_size: int = attr.ib(default=14, validator=[instance_of(int), in_range(1)])
-    atom_font_color: str = attr.ib(default="black", validator=is_html_color)
-    atom_stroke_width: float = attr.ib(default=1.0, validator=in_range(0))
-    atom_stroke_opacity: float = attr.ib(default=0.95, validator=in_range(0, 1))
+    atom_label_array: str = attr.ib(
+        default="",
+        validator=instance_of(str),
+        metadata={
+            "help": "The array name to use, if ``array`` chosen for ``atom_label_by``"
+        },
+    )
+    atom_font_size: int = attr.ib(
+        default=14,
+        validator=[instance_of(int), in_range(1)],
+        metadata={"help": "Font size for atom labels."},
+    )
+    atom_font_color: str = attr.ib(
+        default="black",
+        validator=is_html_color,
+        metadata={"help": "Font size for atom labels."},
+    )
+    atom_stroke_width: float = attr.ib(
+        default=1.0,
+        validator=in_range(0),
+        metadata={"help": "line width for atom outlines."},
+    )
+    atom_stroke_opacity: float = attr.ib(
+        default=0.95,
+        validator=in_range(0, 1),
+        metadata={"help": "line opacity for atom outlines."},
+    )
     atom_color_by: str = attr.ib(
         default="element",
         validator=in_(
@@ -126,52 +175,162 @@ class ViewConfig:
                 "value_array",
             )
         ),
+        metadata={"help": "Atom property to label atoms by."},
     )
-    atom_color_array: str = attr.ib(default="", validator=instance_of(str))
-    atom_colormap: str = attr.ib(default="jet", validator=instance_of(str))
+    atom_color_array: str = attr.ib(
+        default="",
+        validator=instance_of(str),
+        metadata={
+            "help": "The array name to use, if ``array`` chosen for ``atom_color_by``"
+        },
+    )
+    atom_colormap: str = attr.ib(
+        default="jet",
+        validator=instance_of(str),
+        metadata={
+            "help": "The matplotlib colormap to use with ``atom_color_by`` values"
+        },
+    )
     atom_colormap_range: Union[list, tuple] = attr.ib(
-        default=(None, None), validator=instance_of((list, tuple))
+        default=(None, None),
+        validator=instance_of((list, tuple)),
+        metadata={
+            "help": "The matplotlib colormap normalisation use with ``atom_color_by`` values"
+        },
     )
-    atom_lighten_by_depth: float = attr.ib(default=0.0, validator=in_range(0))
-    # Fraction (0 to 1) by which to lighten atom colors,
-    # based on their fractional distance along the line from the
-    # maximum to minimum z-coordinate of all elements
-    atom_opacity: float = attr.ib(default=0.95, validator=in_range(0, 1))
-    force_vector_scale: float = attr.ib(default=1.0, validator=in_range(0))
-    velocity_vector_scale: float = attr.ib(default=1.0, validator=in_range(0))
-    ghost_stroke_width: float = attr.ib(default=0.0, validator=in_range(0))
-    ghost_lighten: float = attr.ib(default=0.0, validator=in_range(0))
-    ghost_opacity: float = attr.ib(default=0.4, validator=in_range(0, 1))
-    ghost_stroke_opacity: float = attr.ib(default=0.4, validator=in_range(0, 1))
-    ghost_show_label: bool = attr.ib(default=False, validator=instance_of(bool))
-    ghost_cross_out: bool = attr.ib(default=False, validator=instance_of(bool))
-    show_unit_cell: bool = attr.ib(default=True, validator=instance_of(bool))
+    atom_lighten_by_depth: float = attr.ib(
+        default=0.0,
+        validator=in_range(0),
+        metadata={
+            "help": (
+                "Fraction by which to lighten atom colors, "
+                "based on their fractional distance along the line, "
+                "from the maximum to minimum z-coordinate of all elements"
+            )
+        },
+    )
+    atom_opacity: float = attr.ib(
+        default=0.95, validator=in_range(0, 1), metadata={"help": ""}
+    )
+    force_vector_scale: float = attr.ib(
+        default=1.0,
+        validator=in_range(0),
+        metadata={"help": "Length of force vector arrows."},
+    )
+    velocity_vector_scale: float = attr.ib(
+        default=1.0,
+        validator=in_range(0),
+        metadata={"help": "Length of velocity vector arrows."},
+    )
+    ghost_stroke_width: float = attr.ib(
+        default=0.0, validator=in_range(0), metadata={"help": ""}
+    )
+    ghost_lighten: float = attr.ib(
+        default=0.0,
+        validator=in_range(0),
+        metadata={"help": "Lighten the ghost atom colors by this fraction."},
+    )
+    ghost_opacity: float = attr.ib(
+        default=0.4, validator=in_range(0, 1), metadata={"help": ""}
+    )
+    ghost_stroke_opacity: float = attr.ib(
+        default=0.4, validator=in_range(0, 1), metadata={"help": ""}
+    )
+    ghost_show_label: bool = attr.ib(
+        default=False, validator=instance_of(bool), metadata={"help": ""}
+    )
+    ghost_cross_out: bool = attr.ib(
+        default=False, validator=instance_of(bool), metadata={"help": ""}
+    )
+    show_unit_cell: bool = attr.ib(
+        default=True, validator=instance_of(bool), metadata={"help": ""}
+    )
     show_uc_repeats: Union[bool, list] = attr.ib(
-        default=False, validator=instance_of((bool, list, tuple))
+        default=False,
+        validator=instance_of((bool, list, tuple)),
+        metadata={
+            "help": "If True, and the atoms have been repeated, show each unit cell of the original atoms."
+        },
     )
-    uc_dash_pattern: Union[None, tuple] = attr.ib(default=None)
-    uc_color: str = attr.ib(default="black", validator=is_html_color)
-    show_bonds: bool = attr.ib(default=False, validator=instance_of(bool))
-    bond_opacity: float = attr.ib(default=0.8, validator=in_range(0, 1))
-    show_miller_planes: bool = attr.ib(default=True, validator=instance_of(bool))
+    uc_dash_pattern: Union[None, tuple] = attr.ib(
+        default=None,
+        metadata={"help": "A (length, gap) dash pattern for unit cell lines."},
+    )
+    uc_color: str = attr.ib(
+        default="black",
+        validator=is_html_color,
+        metadata={"help": "Unit cell line color."},
+    )
+    show_bonds: bool = attr.ib(
+        default=False,
+        validator=instance_of(bool),
+        metadata={"help": "Show atomic bonds."},
+    )
+    bond_opacity: float = attr.ib(
+        default=0.8,
+        validator=in_range(0, 1),
+        metadata={"help": "Opacity of atomic bond lines."},
+    )
+    show_miller_planes: bool = attr.ib(
+        default=True, validator=instance_of(bool), metadata={"help": ""}
+    )
     miller_planes: Tuple[dict] = attr.ib(
-        default=(), converter=convert_to_miller_dicts, validator=instance_of(tuple)
+        default=(),
+        converter=convert_to_miller_dicts,
+        validator=instance_of(tuple),
+        metadata={
+            "help": "List of dictionaries, describing miller index planes to create."
+        },
     )
-    miller_as_lines: bool = attr.ib(default=False, validator=instance_of(bool))
-    show_axes: bool = attr.ib(default=True, validator=instance_of(bool))
-    axes_length: float = attr.ib(default=15, validator=in_range(0))
-    axes_font_size: int = attr.ib(default=14, validator=[instance_of(int), in_range(1)])
-    axes_line_color: str = attr.ib(default="black", validator=is_html_color)
+    miller_as_lines: bool = attr.ib(
+        default=False,
+        validator=instance_of(bool),
+        metadata={
+            "help": "If True, the miller planes will be created as lines, rather than polygons."
+        },
+    )
+    show_axes: bool = attr.ib(
+        default=True,
+        validator=instance_of(bool),
+        metadata={
+            "help": ("Show the 'world' axes, " "at a corner of the visualisation.")
+        },
+    )
+    axes_length: float = attr.ib(
+        default=15, validator=in_range(0), metadata={"help": "Length of axes lines."}
+    )
+    axes_font_size: int = attr.ib(
+        default=14, validator=[instance_of(int), in_range(1)], metadata={"help": ""}
+    )
+    axes_line_color: str = attr.ib(
+        default="black", validator=is_html_color, metadata={"help": ""}
+    )
     canvas_size: Tuple[float, float] = attr.ib(
-        default=(400, 400), validator=instance_of((list, tuple))
+        default=(400, 400), validator=instance_of((list, tuple)), metadata={"help": ""}
     )
-    canvas_color_foreground: str = attr.ib(default="#000000", validator=is_html_color)
-    canvas_color_background: str = attr.ib(default="#ffffff", validator=is_html_color)
-    canvas_background_opacity: float = attr.ib(default=0.0, validator=in_range(0, 1))
-    canvas_crop: Union[list, tuple, None] = attr.ib(default=None)
-    zoom: float = attr.ib(default=1.0, validator=in_range(0))
-    camera_fov: float = attr.ib(default=10.0, validator=in_range(1))
-    gui_swap_mouse: bool = attr.ib(default=False, validator=instance_of(bool))
+    canvas_color_foreground: str = attr.ib(
+        default="#000000", validator=is_html_color, metadata={"help": ""}
+    )
+    canvas_color_background: str = attr.ib(
+        default="#ffffff", validator=is_html_color, metadata={"help": ""}
+    )
+    canvas_background_opacity: float = attr.ib(
+        default=0.0, validator=in_range(0, 1), metadata={"help": ""}
+    )
+    canvas_crop: Union[list, tuple, None] = attr.ib(default=None, metadata={"help": ""})
+    zoom: float = attr.ib(
+        default=1.0, validator=in_range(0), metadata={"help": "3D camera zoom."}
+    )
+    camera_fov: float = attr.ib(
+        default=10.0,
+        validator=in_range(1),
+        metadata={"help": "3D camera field-of-view."},
+    )
+    gui_swap_mouse: bool = attr.ib(
+        default=False,
+        validator=instance_of(bool),
+        metadata={"help": "Used with ``make_gui`` only."},
+    )
 
     @uc_dash_pattern.validator
     def _validate_uc_dash_pattern(self, attribute, value):
