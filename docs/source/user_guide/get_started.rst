@@ -1,13 +1,11 @@
 Installation
 ++++++++++++
 
-|PyPI|
+|PyPI| |Conda|
 
-.. Conda
+To install from Conda (recommended)::
 
-.. To install from Conda (recommended)::
-
-..     >> conda install -c conda-forge ase-notebook
+    >> conda install -c conda-forge ase-notebook
 
 To install from PyPi::
 

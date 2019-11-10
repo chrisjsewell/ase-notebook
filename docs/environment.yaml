@@ -6,4 +6,5 @@ dependencies:
   - docutils >=0.15
   - ipypublish >=0.10.10
   - importlib_resources
-  - pythreejs
+  - pythreejs >=2.1,<3
+  - svgutils >=0.3,<0.4

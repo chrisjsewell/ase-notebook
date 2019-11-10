@@ -434,7 +434,7 @@ def concatenate_svgs(
     return Figure(width, height, *elements)
 
 
-def svg_to_pdf(svg, fname=None):
+def svg_to_pdf(svg, file_name=None):
     """Convert SVG to PDF.
 
     To view in notebook::
@@ -458,7 +458,7 @@ def svg_to_pdf(svg, fname=None):
         if os.path.exists(fname):
             os.remove(fname)
 
-    if fname:
-        renderPDF.drawToFile(rlg_drawing, fname)
+    if file_name:
+        renderPDF.drawToFile(rlg_drawing, file_name)
 
     return rlg_drawing

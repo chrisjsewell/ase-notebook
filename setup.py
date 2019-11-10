@@ -37,13 +37,8 @@ setup(
     ],
     extras_require={
         "threejs": ["pythreejs>=2.1,<3", "ipywidgets>=7.5,<8"],
-        "svgtools": [
-            # concatenation
-            "svgutils>=0.3,<0.4",
-            # svg 2 pdf
-            "svglib>=0.9,<1",
-            "reportlab>=3.5,<4",
-        ],
+        "svgconcat": ["svgutils>=0.3,<0.4"],
+        "svg2pdf": ["svglib>=0.9,<1", "reportlab>=3.5,<4"],
         "testing": [
             "coverage",
             "pytest>=3.6,<4",
