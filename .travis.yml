@@ -30,7 +30,7 @@ install:
       fi
   - |
       if [[ "$TEST_TYPE" == "docs" ]]; then
-        pip install -e .[threejs,docs]
+        pip install -e .[threejs,svgconcat,docs]
         url="https://github.com/jgm/pandoc/releases/tag/2.6"
         path=$(curl -L $url | grep -o '/jgm/pandoc/releases/download/.*-amd64\.deb')
         downloadUrl="https://github.com$path"
