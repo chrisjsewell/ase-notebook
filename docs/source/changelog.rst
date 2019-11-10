@@ -1,9 +1,13 @@
 Changelog
 =========
 
+Version 0.3.1
+-------------
 
-Development Branch
-------------------
+Improve documentation and add Binder build.
+
+Version 0.3.0
+-------------
 - Add autodoc decorator.
 
 - Restructure and Add CI Testing (#1)
