@@ -557,7 +557,7 @@ def make_basic_gui(container):
     axes = [container.axes_renderer] if "axes_renderer" in container else []
 
     info_box = ipyw.HTML(
-        value="Double-click atom for info (requires active kernel).",
+        value="",  # "Double-click atom for info (requires active kernel).",
         color="grey",
         layout=ipyw.Layout(
             max_height="10px", margin="0px 0px 0px 0px", align_self="flex-start"
