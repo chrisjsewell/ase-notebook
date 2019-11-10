@@ -56,8 +56,9 @@ ipysphinx_show_prompts = True
 git_commands = ["git", "rev-parse", "HEAD"]
 try:
     git_commit = subprocess.check_output(git_commands).decode("utf8").strip()
+    binderpath = "master"
 except subprocess.CalledProcessError:
-    git_commit = "v{}".format(ase_notebook.__version__)
+    git_commit = binderpath = "v{}".format(ase_notebook.__version__)
 
 ipysphinx_prolog = r"""
 {{% set docname = env.doc2path(env.docname, base='docs/source') %}}
@@ -69,13 +70,15 @@ ipysphinx_prolog = r"""
 
     .. nbinfo::
 
-        This page was generated from `{{{{ docname }}}}`__.
+        | This page was generated from `{{{{ docname }}}}`__.
+        | Interactive online version:
+          :raw-html:`<a href="https://mybinder.org/v2/gh/chrisjsewell/ase-notebook/{binderpath}?filepath={{{{ docname }}}}"><img alt="Binder badge" src="https://mybinder.org/badge_logo.svg" style="vertical-align:text-bottom"></a>`
 
     __ https://github.com/chrisjsewell/ase-notebook/blob/{git_commit}/{{{{ docname }}}}
 
-""".format(
-    git_commit=git_commit
-)  # noqa: E501
+""".format(  # noqa: E501
+    git_commit=git_commit, binderpath=binderpath
+)
 
 intersphinx_mapping = {
     "python": ("https://docs.python.org/3.6", None),
