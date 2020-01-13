@@ -1,6 +1,7 @@
 """Implementation agnostics visualisation functions."""
 from itertools import product
 from math import ceil, cos, radians, sin
+from typing import List
 
 import numpy as np
 
@@ -212,12 +213,25 @@ def compute_bonds(atoms, atom_radii):
     return bonds
 
 
+def filter_bond_indices(bonds, to_keep: List[bool]):
+    """Filter bonds by required indices."""
+    keep = [i for i, b in enumerate(to_keep) if b]
+    index1 = np.isin(bonds[:, 0], keep)
+    # second index, only if it is not-periodic image
+    index2 = np.logical_and(
+        np.isin(bonds[:, 1], keep), np.equal(bonds[:, 2:], [0, 0, 0]).all(axis=1)
+    )
+    return bonds[np.logical_or(index1, index2)]
+
+
 def initialise_element_groups(
     atoms,
     atom_radii,
     show_unit_cell=True,
     uc_dash_pattern=None,
     show_bonds=False,
+    bond_array_name=None,
+    bond_pairs_filter=None,
     bond_supercell=(1, 1, 1),
     miller_planes=None,
     miller_planes_as_lines=False,
@@ -235,6 +249,11 @@ def initialise_element_groups(
         split unit cell lines into dash pattern (line_length, gap_length)
     show_bonds : bool
         show the atomic bonds
+    bond_array_name : str
+        The name of a boolean array on the Atoms, specifying which atoms that bonds
+        should be drawn for (if None, then all bonds are drawn).
+    bond_pairs_filter : list
+        A list of bond element pairs to filter by, e.g. [("Fe", "O"), ("Fe", "Fe")]
     bond_supercell : tuple
         the supercell of unit cell used for computing bonds
     miller_planes: list[dict] or None
@@ -291,6 +310,20 @@ def initialise_element_groups(
         atomscopy = atoms.copy()
         atomscopy.cell *= np.array(bond_supercell)[:, np.newaxis]
         bonds = compute_bonds(atomscopy, atom_radii)
+        if bond_array_name is not None:
+            bonds = filter_bond_indices(
+                bonds, atoms.get_array(bond_array_name).tolist()
+            )
+        if bond_pairs_filter is not None:
+            # ensure bi-directional
+            allowed = set(
+                [(a, b) for a, b in bond_pairs_filter]
+                + [(b, a) for a, b in bond_pairs_filter]
+            )
+            symbols = atoms.get_chemical_symbols()
+            bonds = bonds[
+                [(symbols[i], symbols[j]) in allowed for i, j in bonds[:, 0:2]]
+            ]
         bond_atom_indices = [(bond[0], bond[1]) for bond in bonds]
     else:
         bonds = np.empty((0, 5), int)
