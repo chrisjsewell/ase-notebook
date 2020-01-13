@@ -222,6 +222,8 @@ class AseView:
             show_unit_cell=config.show_unit_cell,
             uc_dash_pattern=config.uc_dash_pattern,
             show_bonds=config.show_bonds,
+            bond_array_name=config.bond_array_name,
+            bond_pairs_filter=config.bond_pairs_filter,
             miller_planes=config.miller_planes if config.show_miller_planes else None,
             miller_planes_as_lines=config.miller_as_lines,
         )
@@ -258,7 +260,10 @@ class AseView:
             {
                 "color": atom_colors,
                 "label": [
-                    None if g or not config.atom_show_label else l
+                    None
+                    if (g and not config.ghost_show_label)
+                    or (not config.atom_show_label)
+                    else l
                     for l, g in zip(atom_labels, ghost_atoms)
                 ],
                 "ghost": ghost_atoms,

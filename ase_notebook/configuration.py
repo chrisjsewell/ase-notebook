@@ -1,9 +1,9 @@
 """A module for creating visualisations of a structure."""
 from collections import Mapping
-from typing import Tuple, Union
+from typing import Optional, Tuple, Union
 
 import attr
-from attr.validators import in_, instance_of
+from attr.validators import in_, instance_of, optional
 
 from .attr_doc import autodoc
 from .color import Color
@@ -266,6 +266,26 @@ class ViewConfig:
         validator=instance_of(bool),
         metadata={"help": "Show atomic bonds."},
     )
+    bond_array_name: Optional[str] = attr.ib(
+        default=None,
+        validator=optional(instance_of(str)),
+        metadata={
+            "help": (
+                "The name of a boolean array on the Atoms, "
+                "specifying which atoms that bonds should be drawn for "
+                "(if None, then all bonds are drawn)."
+            )
+        },
+    )
+    bond_pairs_filter: Optional[list] = attr.ib(
+        default=None,
+        metadata={
+            "help": (
+                "A list of bond element pairs to filter by, "
+                "e.g. [('Fe', 'O'), ('Fe', 'Fe')]."
+            )
+        },
+    )
     bond_opacity: float = attr.ib(
         default=0.8,
         validator=in_range(0, 1),
@@ -345,6 +365,25 @@ class ViewConfig:
             raise TypeError(
                 f"'{attribute.name}' (line_length, gap_length) must have positive lengths."
             )
+
+    @bond_pairs_filter.validator
+    def _bond_pairs_filter(self, attribute, value):
+        """Validate `bond_pairs_filter` attribute."""
+        if value is None:
+            return
+        if not isinstance(value, (list, tuple)):
+            raise TypeError(f"'{attribute.name}' must be a list or tuple.")
+        for i, item in enumerate(value):
+            try:
+                assert (
+                    len(item) == 2
+                    and isinstance(item[0], str)
+                    and isinstance(item[1], str)
+                )
+            except (AssertionError, IndexError, TypeError, ValueError):
+                raise TypeError(
+                    f"'{attribute.name}' item {i} must be a pair of strings."
+                )
 
     @canvas_crop.validator
     def _validate_canvas_crop(self, attribute, value):
