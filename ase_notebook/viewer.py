@@ -389,14 +389,26 @@ class AseView:
             viewbox = (0, 0, config.canvas_size[0], config.canvas_size[1])
 
         if config.show_axes:
+            rmatrix = axes = rotation_matrix * (1, -1, 1)
+            labels = ("X", "Y", "Z")
+            if config.axes_uc:
+                # TODO add config.axes_uc to threejs render
+                axes = np.einsum("...jk,...k->...j", rmatrix.T, atoms.cell)
+                axes = np.divide(axes.T, np.linalg.norm(axes, axis=1)).T
+                labels = ("a", "b", "c")
             svg_elements.extend(
                 create_axes_elements(
-                    rotation_matrix * (1, -1, 1),
+                    axes,
                     config.canvas_size,
-                    inset=(20 + left, 20 + bottom),
+                    # TODO compute offset based on axes xs and ys
+                    inset=(
+                        config.axes_offset[0] + left,
+                        config.axes_offset[1] + bottom,
+                    ),
                     length=config.axes_length,
                     font_size=config.axes_font_size,
                     line_color=config.axes_line_color,
+                    labels=labels,
                 )
             )
 
