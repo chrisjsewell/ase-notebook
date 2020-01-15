@@ -1,12 +1,28 @@
 """A module for creating visualisations of a structure."""
-from collections import Mapping
+from collections import Iterable, Mapping
 from typing import Optional, Tuple, Union
 
 import attr
-from attr.validators import in_, instance_of, optional
+from attr.validators import deep_iterable, in_, instance_of, optional
 
 from .attr_doc import autodoc
 from .color import Color
+
+
+def iterable_length(length):
+    """Validate that an attribute is an iterable of a certain length."""  # noqa: D202
+
+    def _validate(self, attribute, value):
+        if not isinstance(value, Iterable) or len(value) != 2:
+            raise TypeError(
+                f"'{attribute.name}' must be an interable of length {length} "
+                f"(got {value!r} that is a {value.__class__!r}).",
+                attribute,
+                Iterable,
+                value,
+            )
+
+    return _validate
 
 
 def in_range(minimum=None, maximum=None):
@@ -316,6 +332,15 @@ class ViewConfig:
             "help": ("Show the 'world' axes, " "at a corner of the visualisation.")
         },
     )
+    axes_uc: bool = attr.ib(
+        default=False,
+        validator=instance_of(bool),
+        metadata={
+            "help": (
+                "Show the 'unit cell' axes (abc), instead of the 'world' axes (XYZ)"
+            )
+        },
+    )
     axes_length: float = attr.ib(
         default=15, validator=in_range(0), metadata={"help": "Length of axes lines."}
     )
@@ -325,8 +350,15 @@ class ViewConfig:
     axes_line_color: str = attr.ib(
         default="black", validator=is_html_color, metadata={"help": ""}
     )
+    axes_offset: Tuple[float, float] = attr.ib(
+        default=(20, 20),
+        validator=deep_iterable(instance_of((int, float)), iterable_length(2)),
+        metadata={"help": "Offset of axis origin from the bottom left of the canvas"},
+    )
     canvas_size: Tuple[float, float] = attr.ib(
-        default=(400, 400), validator=instance_of((list, tuple)), metadata={"help": ""}
+        default=(400, 400),
+        validator=deep_iterable(instance_of((int, float)), iterable_length(2)),
+        metadata={"help": ""},
     )
     canvas_color_foreground: str = attr.ib(
         default="#000000", validator=is_html_color, metadata={"help": ""}
