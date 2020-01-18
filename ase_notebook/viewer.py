@@ -155,11 +155,18 @@ class AseView:
         else:
             raise ValueError(self.config.atom_color_by)
 
+        return self.values_to_colors(
+            values, self.config.atom_colormap, self.config.atom_colormap_range
+        )
+
+    @staticmethod
+    def values_to_colors(values, cmap, cmap_range=(None, None)):
+        """Map hex colors, to a list of values."""
         from matplotlib.cm import get_cmap
         from matplotlib.colors import Normalize, rgb2hex
 
-        cmap = get_cmap(self.config.atom_colormap)
-        cmin, cmax = self.config.atom_colormap_range
+        cmap = get_cmap(cmap)
+        cmin, cmax = cmap_range
         norm = Normalize(
             vmin=min(values) if cmin is None else cmin,
             vmax=max(values) if cmax is None else cmax,
@@ -296,16 +303,27 @@ class AseView:
         element_groups["cell_lines"].set_property_many(
             {"color": config.uc_color}, element=False
         )
-        element_groups["bond_lines"].set_property(
-            "color",
-            [
-                (atom_colors[i], atom_colors[j])
-                for i, j in element_groups["bond_lines"].get_elements_property(
-                    "atom_index"
-                )
-            ],
-            element=True,
-        )
+        if config.bond_color_by == "atoms":
+            element_groups["bond_lines"].set_property(
+                "color",
+                [
+                    (atom_colors[i], atom_colors[j])
+                    for i, j in element_groups["bond_lines"].get_elements_property(
+                        "atom_index"
+                    )
+                ],
+                element=True,
+            )
+        elif config.bond_color_by == "length":
+            bond_colors = self.values_to_colors(
+                element_groups["bond_lines"].get_elements_property("bond_length"),
+                self.config.bond_colormap,
+                self.config.bond_colormap_range,
+            )
+            element_groups["bond_lines"].set_property(
+                "color", [(c, c) for c in bond_colors], element=True
+            )
+
         element_groups["bond_lines"].set_property_many(
             {"stroke_width": bond_thickness, "stroke_opacity": config.bond_opacity},
             element=False,
