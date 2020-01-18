@@ -1,4 +1,5 @@
 """A module for creating visualisations of a structure."""
+from copy import copy
 import json
 import subprocess
 import sys
@@ -43,6 +44,14 @@ class AseView:
             self._config = config
         else:
             self._config = ViewConfig(**kwargs)
+
+    def __copy__(self):
+        """Return a copy of this instance."""
+        return self.__class__(copy(self._config))
+
+    def copy(self):
+        """Return a copy of this instance."""
+        return self.__class__(copy(self._config))
 
     @property
     def config(self):
