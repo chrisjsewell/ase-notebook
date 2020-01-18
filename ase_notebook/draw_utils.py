@@ -334,20 +334,24 @@ def initialise_element_groups(
         cell = np.array(bond_supercell)[:, np.newaxis] * atoms.cell
         a = positions[bonds[:, 0]]
         b = positions[bonds[:, 1]] + np.dot(bonds[:, 2:], cell) - a
-        d = (b ** 2).sum(1) ** 0.5
+        bond_lengths = (b ** 2).sum(1) ** 0.5
         r = 0.65 * atom_radii
-        x0 = (r[bonds[:, 0]] / d).reshape((-1, 1))
-        x1 = (r[bonds[:, 1]] / d).reshape((-1, 1))
+        x0 = (r[bonds[:, 0]] / bond_lengths).reshape((-1, 1))
+        x1 = (r[bonds[:, 1]] / bond_lengths).reshape((-1, 1))
         bond_starts = a + b * x0
         b *= 1.0 - x0 - x1
-        b[bonds[:, 2:].any(1)] *= 0.5
+        # This halves bond lengths for periodic images, it is present in the core
+        # ase viewer, but is confusing when comparing bond lengths:
+        # b[bonds[:, 2:].any(1)] *= 0.5
         bond_ends = bond_starts + b
     else:
+        bond_lengths = np.empty((0,))
         bond_starts = bond_ends = np.empty((0, 3))
 
     el_bond_lines = {
         "coordinates": np.stack((bond_starts, bond_ends), axis=1),
         "atom_index": bond_atom_indices,
+        "bond_lengths": bond_lengths,
     }
 
     return draw.DrawGroup(
@@ -357,7 +361,10 @@ def initialise_element_groups(
             draw.DrawElementsLine(
                 "bond_lines",
                 el_bond_lines["coordinates"],
-                element_properties={"atom_index": el_bond_lines["atom_index"]},
+                element_properties={
+                    "atom_index": el_bond_lines["atom_index"],
+                    "bond_length": bond_lengths,
+                },
             ),
             draw.DrawElementsLine(
                 "miller_lines",

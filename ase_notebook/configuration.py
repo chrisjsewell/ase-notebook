@@ -191,7 +191,7 @@ class ViewConfig:
                 "value_array",
             )
         ),
-        metadata={"help": "Atom property to label atoms by."},
+        metadata={"help": "Atom property to color atoms by."},
     )
     atom_color_array: str = attr.ib(
         default="",
@@ -268,7 +268,7 @@ class ViewConfig:
             "help": "If True, and the atoms have been repeated, show each unit cell of the original atoms."
         },
     )
-    uc_dash_pattern: Union[None, tuple] = attr.ib(
+    uc_dash_pattern: Union[None, Tuple[float, float]] = attr.ib(
         default=None,
         metadata={"help": "A (length, gap) dash pattern for unit cell lines."},
     )
@@ -306,6 +306,32 @@ class ViewConfig:
         default=0.8,
         validator=in_range(0, 1),
         metadata={"help": "Opacity of atomic bond lines."},
+    )
+    bond_color_by: str = attr.ib(
+        default="atoms",
+        validator=in_(("atoms", "length")),
+        metadata={
+            "help": "How to color bond: 'atoms' (same as connecting atoms) or 'length'."
+        },
+    )
+    bond_colormap: str = attr.ib(
+        default="jet",
+        validator=instance_of(str),
+        metadata={
+            "help": ("The matplotlib colormap to use with ``bond_color_by='length'``")
+        },
+    )
+    bond_colormap_range: Union[list, tuple] = attr.ib(
+        default=(None, None),
+        validator=deep_iterable(
+            optional(instance_of((int, float))), iterable_length(2)
+        ),
+        metadata={
+            "help": (
+                "The matplotlib colormap normalisation use with "
+                "``bond_color_by='length'``"
+            )
+        },
     )
     show_miller_planes: bool = attr.ib(
         default=True, validator=instance_of(bool), metadata={"help": ""}
@@ -357,7 +383,7 @@ class ViewConfig:
     )
     canvas_size: Tuple[float, float] = attr.ib(
         default=(400, 400),
-        validator=deep_iterable(instance_of((int, float)), iterable_length(2)),
+        validator=deep_iterable(in_range(1), iterable_length(2)),
         metadata={"help": ""},
     )
     canvas_color_foreground: str = attr.ib(
