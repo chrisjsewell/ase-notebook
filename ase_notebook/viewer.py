@@ -238,6 +238,7 @@ class AseView:
             show_unit_cell=config.show_unit_cell,
             uc_dash_pattern=config.uc_dash_pattern,
             show_bonds=config.show_bonds,
+            bond_radii_scale=config.bond_radii_scale,
             bond_array_name=config.bond_array_name,
             bond_pairs_filter=config.bond_pairs_filter,
             miller_planes=config.miller_planes if config.show_miller_planes else None,
