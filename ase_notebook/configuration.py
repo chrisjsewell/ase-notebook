@@ -25,14 +25,17 @@ def iterable_length(length):
     return _validate
 
 
-def in_range(minimum=None, maximum=None):
+def in_range(minimum=None, maximum=None, inclusive_min=True):
     """Validate that an attribute value is a number >= 0."""  # noqa: D202
 
     def _validate(self, attribute, value):
         raise_error = False
         if not isinstance(value, (int, float)):
             raise_error = True
-        elif minimum is not None and value < minimum:
+        elif minimum is not None and (
+            (inclusive_min and value < minimum)
+            or (not inclusive_min and value <= minimum)
+        ):
             raise_error = True
         elif maximum is not None and value > maximum:
             raise_error = True
@@ -282,6 +285,13 @@ class ViewConfig:
         validator=instance_of(bool),
         metadata={"help": "Show atomic bonds."},
     )
+    bond_radii_scale: float = attr.ib(
+        default=1.5,
+        validator=in_range(0.0, inclusive_min=False),
+        metadata={
+            "help": "Factor to scale atomic radii by, when computing bonds (via overlapping radii)"
+        },
+    )
     bond_array_name: Optional[str] = attr.ib(
         default=None,
         validator=optional(instance_of(str)),
@@ -368,7 +378,9 @@ class ViewConfig:
         },
     )
     axes_length: float = attr.ib(
-        default=15, validator=in_range(0), metadata={"help": "Length of axes lines."}
+        default=15,
+        validator=in_range(0, inclusive_min=False),
+        metadata={"help": "Length of axes lines."},
     )
     axes_font_size: int = attr.ib(
         default=14, validator=[instance_of(int), in_range(1)], metadata={"help": ""}
@@ -397,7 +409,9 @@ class ViewConfig:
     )
     canvas_crop: Union[list, tuple, None] = attr.ib(default=None, metadata={"help": ""})
     zoom: float = attr.ib(
-        default=1.0, validator=in_range(0), metadata={"help": "3D camera zoom."}
+        default=1.0,
+        validator=in_range(0, inclusive_min=False),
+        metadata={"help": "3D camera zoom."},
     )
     camera_fov: float = attr.ib(
         default=10.0,

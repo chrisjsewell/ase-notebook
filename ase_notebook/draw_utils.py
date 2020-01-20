@@ -184,11 +184,11 @@ def get_miller_coordinates(cell, miller):
     return np.array(points)
 
 
-def compute_bonds(atoms, atom_radii):
+def compute_bonds(atoms, atom_radii, scale_radii=1.5):
     """Compute bonds for atoms."""
     from ase.neighborlist import NeighborList
 
-    nl = NeighborList(atom_radii * 1.5, skin=0, self_interaction=False)
+    nl = NeighborList(atom_radii * scale_radii, skin=0, self_interaction=False)
     nl.update(atoms)
     nbonds = nl.nneighbors + nl.npbcneighbors
 
@@ -230,6 +230,7 @@ def initialise_element_groups(
     show_unit_cell=True,
     uc_dash_pattern=None,
     show_bonds=False,
+    bond_radii_scale=1.5,
     bond_array_name=None,
     bond_pairs_filter=None,
     bond_supercell=(1, 1, 1),
@@ -249,6 +250,8 @@ def initialise_element_groups(
         split unit cell lines into dash pattern (line_length, gap_length)
     show_bonds : bool
         show the atomic bonds
+    bond_radii_scale : float
+        Factor to scale atomic radii by, when computing bonds (via overlapping radii)
     bond_array_name : str
         The name of a boolean array on the Atoms, specifying which atoms that bonds
         should be drawn for (if None, then all bonds are drawn).
@@ -309,7 +312,7 @@ def initialise_element_groups(
     if show_bonds:
         atomscopy = atoms.copy()
         atomscopy.cell *= np.array(bond_supercell)[:, np.newaxis]
-        bonds = compute_bonds(atomscopy, atom_radii)
+        bonds = compute_bonds(atomscopy, atom_radii, bond_radii_scale)
         if bond_array_name is not None:
             bonds = filter_bond_indices(
                 bonds, atoms.get_array(bond_array_name).tolist()
