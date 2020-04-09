@@ -14,8 +14,6 @@ matrix:
         env: TEST_TYPE="pytest" PYPI_DEPLOY=true
       - python: 3.7
         env: TEST_TYPE="pytest"
-      - python: 3.6
-        env: TEST_TYPE="docs" READTHEDOCS="True"
 
 install:
   - pip install --upgrade pip wheel setuptools
@@ -28,15 +26,6 @@ install:
         pip install -e .[threejs,testing]
         pip install coveralls
       fi
-  - |
-      if [[ "$TEST_TYPE" == "docs" ]]; then
-        pip install -e .[threejs,svgconcat,docs]
-        url="https://github.com/jgm/pandoc/releases/tag/2.6"
-        path=$(curl -L $url | grep -o '/jgm/pandoc/releases/download/.*-amd64\.deb')
-        downloadUrl="https://github.com$path"
-        file=${path##*/}
-        wget $downloadUrl && sudo dpkg -i $file
-      fi
 
 script:
 - |
@@ -47,11 +36,6 @@ script:
 - |
   if [[ "$TEST_TYPE" == "pre-commit" ]]; then
     pre-commit run --all-files || ( git status --short ; git diff ; exit 1 )
-  fi
-- |
-  if [[ "$TEST_TYPE" == "docs" ]]; then
-    cd docs
-    make
   fi
 
 after_success:

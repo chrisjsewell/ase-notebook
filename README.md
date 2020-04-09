@@ -2,6 +2,7 @@
 
 [![CI Status](https://travis-ci.org/chrisjsewell/ase-notebook.svg?branch=develop)](https://travis-ci.org/chrisjsewell/ase-notebook)
 [![Coverage](https://coveralls.io/repos/github/chrisjsewell/ase-notebook/badge.svg?branch=develop)](https://coveralls.io/github/chrisjsewell/ase-notebook?branch=develop)
+[![CircleCI](https://circleci.com/gh/chrisjsewell/ase-notebook.svg?style=svg)](https://circleci.com/gh/chrisjsewell/ase-notebook)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/ambv/black)
 [![RTD](https://readthedocs.org/projects/ase-notebook/badge)](http://ase-notebook.readthedocs.io/)
 [![PyPI](https://img.shields.io/pypi/v/ase-notebook.svg)](https://pypi.org/project/ase-notebook)

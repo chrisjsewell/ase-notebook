@@ -1,6 +1,7 @@
 """Implementation agnostics visualisation functions."""
 from itertools import product
 from math import ceil, cos, radians, sin
+from typing import List
 
 import numpy as np
 
@@ -183,11 +184,11 @@ def get_miller_coordinates(cell, miller):
     return np.array(points)
 
 
-def compute_bonds(atoms, atom_radii):
+def compute_bonds(atoms, atom_radii, scale_radii=1.5):
     """Compute bonds for atoms."""
     from ase.neighborlist import NeighborList
 
-    nl = NeighborList(atom_radii * 1.5, skin=0, self_interaction=False)
+    nl = NeighborList(atom_radii * scale_radii, skin=0, self_interaction=False)
     nl.update(atoms)
     nbonds = nl.nneighbors + nl.npbcneighbors
 
@@ -212,12 +213,26 @@ def compute_bonds(atoms, atom_radii):
     return bonds
 
 
+def filter_bond_indices(bonds, to_keep: List[bool]):
+    """Filter bonds by required indices."""
+    keep = [i for i, b in enumerate(to_keep) if b]
+    index1 = np.isin(bonds[:, 0], keep)
+    # second index, only if it is not-periodic image
+    index2 = np.logical_and(
+        np.isin(bonds[:, 1], keep), np.equal(bonds[:, 2:], [0, 0, 0]).all(axis=1)
+    )
+    return bonds[np.logical_or(index1, index2)]
+
+
 def initialise_element_groups(
     atoms,
     atom_radii,
     show_unit_cell=True,
     uc_dash_pattern=None,
     show_bonds=False,
+    bond_radii_scale=1.5,
+    bond_array_name=None,
+    bond_pairs_filter=None,
     bond_supercell=(1, 1, 1),
     miller_planes=None,
     miller_planes_as_lines=False,
@@ -235,6 +250,13 @@ def initialise_element_groups(
         split unit cell lines into dash pattern (line_length, gap_length)
     show_bonds : bool
         show the atomic bonds
+    bond_radii_scale : float
+        Factor to scale atomic radii by, when computing bonds (via overlapping radii)
+    bond_array_name : str
+        The name of a boolean array on the Atoms, specifying which atoms that bonds
+        should be drawn for (if None, then all bonds are drawn).
+    bond_pairs_filter : list
+        A list of bond element pairs to filter by, e.g. [("Fe", "O"), ("Fe", "Fe")]
     bond_supercell : tuple
         the supercell of unit cell used for computing bonds
     miller_planes: list[dict] or None
@@ -290,7 +312,21 @@ def initialise_element_groups(
     if show_bonds:
         atomscopy = atoms.copy()
         atomscopy.cell *= np.array(bond_supercell)[:, np.newaxis]
-        bonds = compute_bonds(atomscopy, atom_radii)
+        bonds = compute_bonds(atomscopy, atom_radii, bond_radii_scale)
+        if bond_array_name is not None:
+            bonds = filter_bond_indices(
+                bonds, atoms.get_array(bond_array_name).tolist()
+            )
+        if bond_pairs_filter is not None:
+            # ensure bi-directional
+            allowed = set(
+                [(a, b) for a, b in bond_pairs_filter]
+                + [(b, a) for a, b in bond_pairs_filter]
+            )
+            symbols = atoms.get_chemical_symbols()
+            bonds = bonds[
+                [(symbols[i], symbols[j]) in allowed for i, j in bonds[:, 0:2]]
+            ]
         bond_atom_indices = [(bond[0], bond[1]) for bond in bonds]
     else:
         bonds = np.empty((0, 5), int)
@@ -301,20 +337,24 @@ def initialise_element_groups(
         cell = np.array(bond_supercell)[:, np.newaxis] * atoms.cell
         a = positions[bonds[:, 0]]
         b = positions[bonds[:, 1]] + np.dot(bonds[:, 2:], cell) - a
-        d = (b ** 2).sum(1) ** 0.5
+        bond_lengths = (b ** 2).sum(1) ** 0.5
         r = 0.65 * atom_radii
-        x0 = (r[bonds[:, 0]] / d).reshape((-1, 1))
-        x1 = (r[bonds[:, 1]] / d).reshape((-1, 1))
+        x0 = (r[bonds[:, 0]] / bond_lengths).reshape((-1, 1))
+        x1 = (r[bonds[:, 1]] / bond_lengths).reshape((-1, 1))
         bond_starts = a + b * x0
         b *= 1.0 - x0 - x1
-        b[bonds[:, 2:].any(1)] *= 0.5
+        # This halves bond lengths for periodic images, it is present in the core
+        # ase viewer, but is confusing when comparing bond lengths:
+        # b[bonds[:, 2:].any(1)] *= 0.5
         bond_ends = bond_starts + b
     else:
+        bond_lengths = np.empty((0,))
         bond_starts = bond_ends = np.empty((0, 3))
 
     el_bond_lines = {
         "coordinates": np.stack((bond_starts, bond_ends), axis=1),
         "atom_index": bond_atom_indices,
+        "bond_lengths": bond_lengths,
     }
 
     return draw.DrawGroup(
@@ -324,7 +364,10 @@ def initialise_element_groups(
             draw.DrawElementsLine(
                 "bond_lines",
                 el_bond_lines["coordinates"],
-                element_properties={"atom_index": el_bond_lines["atom_index"]},
+                element_properties={
+                    "atom_index": el_bond_lines["atom_index"],
+                    "bond_length": bond_lengths,
+                },
             ),
             draw.DrawElementsLine(
                 "miller_lines",

@@ -1,22 +1,41 @@
 """A module for creating visualisations of a structure."""
-from collections import Mapping
-from typing import Tuple, Union
+from collections import Iterable, Mapping
+from typing import Optional, Tuple, Union
 
 import attr
-from attr.validators import in_, instance_of
+from attr.validators import deep_iterable, in_, instance_of, optional
 
 from .attr_doc import autodoc
 from .color import Color
 
 
-def in_range(minimum=None, maximum=None):
+def iterable_length(length):
+    """Validate that an attribute is an iterable of a certain length."""  # noqa: D202
+
+    def _validate(self, attribute, value):
+        if not isinstance(value, Iterable) or len(value) != 2:
+            raise TypeError(
+                f"'{attribute.name}' must be an iterable of length {length} "
+                f"(got {value!r} that is a {value.__class__!r}).",
+                attribute,
+                Iterable,
+                value,
+            )
+
+    return _validate
+
+
+def in_range(minimum=None, maximum=None, inclusive_min=True):
     """Validate that an attribute value is a number >= 0."""  # noqa: D202
 
     def _validate(self, attribute, value):
         raise_error = False
         if not isinstance(value, (int, float)):
             raise_error = True
-        elif minimum is not None and value < minimum:
+        elif minimum is not None and (
+            (inclusive_min and value < minimum)
+            or (not inclusive_min and value <= minimum)
+        ):
             raise_error = True
         elif maximum is not None and value > maximum:
             raise_error = True
@@ -175,7 +194,7 @@ class ViewConfig:
                 "value_array",
             )
         ),
-        metadata={"help": "Atom property to label atoms by."},
+        metadata={"help": "Atom property to color atoms by."},
     )
     atom_color_array: str = attr.ib(
         default="",
@@ -252,7 +271,7 @@ class ViewConfig:
             "help": "If True, and the atoms have been repeated, show each unit cell of the original atoms."
         },
     )
-    uc_dash_pattern: Union[None, tuple] = attr.ib(
+    uc_dash_pattern: Union[None, Tuple[float, float]] = attr.ib(
         default=None,
         metadata={"help": "A (length, gap) dash pattern for unit cell lines."},
     )
@@ -266,10 +285,63 @@ class ViewConfig:
         validator=instance_of(bool),
         metadata={"help": "Show atomic bonds."},
     )
+    bond_radii_scale: float = attr.ib(
+        default=1.5,
+        validator=in_range(0.0, inclusive_min=False),
+        metadata={
+            "help": "Factor to scale atomic radii by, when computing bonds (via overlapping radii)"
+        },
+    )
+    bond_array_name: Optional[str] = attr.ib(
+        default=None,
+        validator=optional(instance_of(str)),
+        metadata={
+            "help": (
+                "The name of a boolean array on the Atoms, "
+                "specifying which atoms that bonds should be drawn for "
+                "(if None, then all bonds are drawn)."
+            )
+        },
+    )
+    bond_pairs_filter: Optional[list] = attr.ib(
+        default=None,
+        metadata={
+            "help": (
+                "A list of bond element pairs to filter by, "
+                "e.g. [('Fe', 'O'), ('Fe', 'Fe')]."
+            )
+        },
+    )
     bond_opacity: float = attr.ib(
         default=0.8,
         validator=in_range(0, 1),
         metadata={"help": "Opacity of atomic bond lines."},
+    )
+    bond_color_by: str = attr.ib(
+        default="atoms",
+        validator=in_(("atoms", "length")),
+        metadata={
+            "help": "How to color bond: 'atoms' (same as connecting atoms) or 'length'."
+        },
+    )
+    bond_colormap: str = attr.ib(
+        default="jet",
+        validator=instance_of(str),
+        metadata={
+            "help": ("The matplotlib colormap to use with ``bond_color_by='length'``")
+        },
+    )
+    bond_colormap_range: Union[list, tuple] = attr.ib(
+        default=(None, None),
+        validator=deep_iterable(
+            optional(instance_of((int, float))), iterable_length(2)
+        ),
+        metadata={
+            "help": (
+                "The matplotlib colormap normalisation to use with "
+                "``bond_color_by='length'``"
+            )
+        },
     )
     show_miller_planes: bool = attr.ib(
         default=True, validator=instance_of(bool), metadata={"help": ""}
@@ -296,8 +368,19 @@ class ViewConfig:
             "help": ("Show the 'world' axes, " "at a corner of the visualisation.")
         },
     )
+    axes_uc: bool = attr.ib(
+        default=False,
+        validator=instance_of(bool),
+        metadata={
+            "help": (
+                "Show the 'unit cell' axes (abc), instead of the 'world' axes (XYZ)"
+            )
+        },
+    )
     axes_length: float = attr.ib(
-        default=15, validator=in_range(0), metadata={"help": "Length of axes lines."}
+        default=15,
+        validator=in_range(0, inclusive_min=False),
+        metadata={"help": "Length of axes lines."},
     )
     axes_font_size: int = attr.ib(
         default=14, validator=[instance_of(int), in_range(1)], metadata={"help": ""}
@@ -305,8 +388,15 @@ class ViewConfig:
     axes_line_color: str = attr.ib(
         default="black", validator=is_html_color, metadata={"help": ""}
     )
+    axes_offset: Tuple[float, float] = attr.ib(
+        default=(20, 20),
+        validator=deep_iterable(instance_of((int, float)), iterable_length(2)),
+        metadata={"help": "Offset of axis origin from the bottom left of the canvas"},
+    )
     canvas_size: Tuple[float, float] = attr.ib(
-        default=(400, 400), validator=instance_of((list, tuple)), metadata={"help": ""}
+        default=(400, 400),
+        validator=deep_iterable(in_range(1), iterable_length(2)),
+        metadata={"help": ""},
     )
     canvas_color_foreground: str = attr.ib(
         default="#000000", validator=is_html_color, metadata={"help": ""}
@@ -317,9 +407,13 @@ class ViewConfig:
     canvas_background_opacity: float = attr.ib(
         default=0.0, validator=in_range(0, 1), metadata={"help": ""}
     )
-    canvas_crop: Union[list, tuple, None] = attr.ib(default=None, metadata={"help": ""})
+    canvas_crop: Union[list, tuple, None] = attr.ib(
+        default=None, metadata={"help": "Crop canvas: (left, right, top, bottom)"}
+    )
     zoom: float = attr.ib(
-        default=1.0, validator=in_range(0), metadata={"help": "3D camera zoom."}
+        default=1.0,
+        validator=in_range(0, inclusive_min=False),
+        metadata={"help": "3D camera zoom."},
     )
     camera_fov: float = attr.ib(
         default=10.0,
@@ -345,6 +439,25 @@ class ViewConfig:
             raise TypeError(
                 f"'{attribute.name}' (line_length, gap_length) must have positive lengths."
             )
+
+    @bond_pairs_filter.validator
+    def _bond_pairs_filter(self, attribute, value):
+        """Validate `bond_pairs_filter` attribute."""
+        if value is None:
+            return
+        if not isinstance(value, (list, tuple)):
+            raise TypeError(f"'{attribute.name}' must be a list or tuple.")
+        for i, item in enumerate(value):
+            try:
+                assert (
+                    len(item) == 2
+                    and isinstance(item[0], str)
+                    and isinstance(item[1], str)
+                )
+            except (AssertionError, IndexError, TypeError, ValueError):
+                raise TypeError(
+                    f"'{attribute.name}' item {i} must be a pair of strings."
+                )
 
     @canvas_crop.validator
     def _validate_canvas_crop(self, attribute, value):
