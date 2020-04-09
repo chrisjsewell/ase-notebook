@@ -35,12 +35,12 @@
     exclude: docs/build/*
     name: doc8 - Lint the documentation.
 
-  - id: travis-linter
-    name: Travis Lint
-    entry: travis lint
-    files: .travis.yml
-    language: ruby
-    additional_dependencies: ['travis']
+  # - id: travis-linter
+  #   name: Travis Lint
+  #   entry: travis lint
+  #   files: .travis.yml
+  #   language: ruby
+  #   additional_dependencies: ['travis']
 
   # - id: conda
   #   name: Create environment.yml
