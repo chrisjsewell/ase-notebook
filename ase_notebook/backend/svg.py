@@ -225,10 +225,10 @@ def create_axes_elements(
     font_offset=1.0,
     line_width=1,
     line_color="black",
+    labels=("X", "Y", "Z"),
+    colors=("red", "green", "blue"),
 ):
     """Create the SVG elements, related to the axes."""
-    rgb = ["red", "green", "blue"]
-
     svg_elements = []
 
     for i in axes[:, 2].argsort():
@@ -243,10 +243,10 @@ def create_axes_elements(
         )
         svg_elements.append(
             text.Text(
-                "XYZ"[i],
+                labels[i],
                 x=(e,),
                 y=(f,),
-                fill=rgb[i],
+                fill=colors[i],
                 text_anchor="middle",
                 dominant_baseline="middle",
                 font_size=font_size,
