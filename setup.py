@@ -28,7 +28,7 @@ setup(
         "ase>=3.18,<4",
         "attrs>=19,<20",
         "importlib_resources>=1,<2",
-        "numpy>=1.16.4,<1.17",
+        "numpy>=1.16.4,<1.19",
         # used for color-map
         # TODO use color-map package, with no matplotlib dependency?
         "matplotlib>=3.1,<4",
@@ -58,7 +58,12 @@ setup(
             "flake8_builtins",
             "import-order",
         ],
-        "docs": ["sphinx>=1.8", "sphinx_rtd_theme", "ipypublish>=0.10.10", "ipython"],
+        "docs": [
+            "sphinx>=1.8,<3",
+            "sphinx_rtd_theme",
+            "ipypublish>=0.10.10",
+            "ipython",
+        ],
     },
     classifiers=[
         "Development Status :: 4 - Beta",

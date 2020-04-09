@@ -1,4 +1,5 @@
 """A module for creating visualisations of a structure."""
+from copy import copy
 import json
 import subprocess
 import sys
@@ -43,6 +44,14 @@ class AseView:
             self._config = config
         else:
             self._config = ViewConfig(**kwargs)
+
+    def __copy__(self):
+        """Return a copy of this instance."""
+        return self.__class__(copy(self._config))
+
+    def copy(self):
+        """Return a copy of this instance."""
+        return self.__class__(copy(self._config))
 
     @property
     def config(self):
@@ -155,11 +164,18 @@ class AseView:
         else:
             raise ValueError(self.config.atom_color_by)
 
+        return self.values_to_colors(
+            values, self.config.atom_colormap, self.config.atom_colormap_range
+        )
+
+    @staticmethod
+    def values_to_colors(values, cmap, cmap_range=(None, None)):
+        """Map hex colors, to a list of values."""
         from matplotlib.cm import get_cmap
         from matplotlib.colors import Normalize, rgb2hex
 
-        cmap = get_cmap(self.config.atom_colormap)
-        cmin, cmax = self.config.atom_colormap_range
+        cmap = get_cmap(cmap)
+        cmin, cmax = cmap_range
         norm = Normalize(
             vmin=min(values) if cmin is None else cmin,
             vmax=max(values) if cmax is None else cmax,
@@ -222,6 +238,9 @@ class AseView:
             show_unit_cell=config.show_unit_cell,
             uc_dash_pattern=config.uc_dash_pattern,
             show_bonds=config.show_bonds,
+            bond_radii_scale=config.bond_radii_scale,
+            bond_array_name=config.bond_array_name,
+            bond_pairs_filter=config.bond_pairs_filter,
             miller_planes=config.miller_planes if config.show_miller_planes else None,
             miller_planes_as_lines=config.miller_as_lines,
         )
@@ -258,7 +277,10 @@ class AseView:
             {
                 "color": atom_colors,
                 "label": [
-                    None if g or not config.atom_show_label else l
+                    None
+                    if (g and not config.ghost_show_label)
+                    or (not config.atom_show_label)
+                    else l
                     for l, g in zip(atom_labels, ghost_atoms)
                 ],
                 "ghost": ghost_atoms,
@@ -291,16 +313,27 @@ class AseView:
         element_groups["cell_lines"].set_property_many(
             {"color": config.uc_color}, element=False
         )
-        element_groups["bond_lines"].set_property(
-            "color",
-            [
-                (atom_colors[i], atom_colors[j])
-                for i, j in element_groups["bond_lines"].get_elements_property(
-                    "atom_index"
-                )
-            ],
-            element=True,
-        )
+        if config.bond_color_by == "atoms":
+            element_groups["bond_lines"].set_property(
+                "color",
+                [
+                    (atom_colors[i], atom_colors[j])
+                    for i, j in element_groups["bond_lines"].get_elements_property(
+                        "atom_index"
+                    )
+                ],
+                element=True,
+            )
+        elif config.bond_color_by == "length":
+            bond_colors = self.values_to_colors(
+                element_groups["bond_lines"].get_elements_property("bond_length"),
+                self.config.bond_colormap,
+                self.config.bond_colormap_range,
+            )
+            element_groups["bond_lines"].set_property(
+                "color", [(c, c) for c in bond_colors], element=True
+            )
+
         element_groups["bond_lines"].set_property_many(
             {"stroke_width": bond_thickness, "stroke_opacity": config.bond_opacity},
             element=False,
@@ -384,14 +417,26 @@ class AseView:
             viewbox = (0, 0, config.canvas_size[0], config.canvas_size[1])
 
         if config.show_axes:
+            rmatrix = axes = rotation_matrix * (1, -1, 1)
+            labels = ("X", "Y", "Z")
+            if config.axes_uc:
+                # TODO add config.axes_uc to threejs render
+                axes = np.einsum("...jk,...k->...j", rmatrix.T, atoms.cell)
+                axes = np.divide(axes.T, np.linalg.norm(axes, axis=1)).T
+                labels = ("a", "b", "c")
             svg_elements.extend(
                 create_axes_elements(
-                    rotation_matrix * (1, -1, 1),
+                    axes,
                     config.canvas_size,
-                    inset=(20 + left, 20 + bottom),
+                    # TODO compute offset based on axes xs and ys
+                    inset=(
+                        config.axes_offset[0] + left,
+                        config.axes_offset[1] + bottom,
+                    ),
                     length=config.axes_length,
                     font_size=config.axes_font_size,
                     line_color=config.axes_line_color,
+                    labels=labels,
                 )
             )
 
