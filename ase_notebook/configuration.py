@@ -15,7 +15,7 @@ def iterable_length(length):
     def _validate(self, attribute, value):
         if not isinstance(value, Iterable) or len(value) != 2:
             raise TypeError(
-                f"'{attribute.name}' must be an interable of length {length} "
+                f"'{attribute.name}' must be an iterable of length {length} "
                 f"(got {value!r} that is a {value.__class__!r}).",
                 attribute,
                 Iterable,
@@ -407,7 +407,9 @@ class ViewConfig:
     canvas_background_opacity: float = attr.ib(
         default=0.0, validator=in_range(0, 1), metadata={"help": ""}
     )
-    canvas_crop: Union[list, tuple, None] = attr.ib(default=None, metadata={"help": ""})
+    canvas_crop: Union[list, tuple, None] = attr.ib(
+        default=None, metadata={"help": "Crop canvas: (left, right, top, bottom)"}
+    )
     zoom: float = attr.ib(
         default=1.0,
         validator=in_range(0, inclusive_min=False),
