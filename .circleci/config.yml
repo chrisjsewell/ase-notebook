@@ -33,7 +33,7 @@ jobs:
             make
 
       - store_artifacts:
-          path: docs/_build/html/
+          path: docs/build/html/
           destination: html
 
 
