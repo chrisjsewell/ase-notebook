@@ -338,7 +338,7 @@ class ViewConfig:
         ),
         metadata={
             "help": (
-                "The matplotlib colormap normalisation use with "
+                "The matplotlib colormap normalisation to use with "
                 "``bond_color_by='length'``"
             )
         },

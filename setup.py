@@ -58,7 +58,12 @@ setup(
             "flake8_builtins",
             "import-order",
         ],
-        "docs": ["sphinx>=1.8", "sphinx_rtd_theme", "ipypublish>=0.10.10", "ipython"],
+        "docs": [
+            "sphinx>=1.8,<3",
+            "sphinx_rtd_theme",
+            "ipypublish>=0.10.10",
+            "ipython",
+        ],
     },
     classifiers=[
         "Development Status :: 4 - Beta",
