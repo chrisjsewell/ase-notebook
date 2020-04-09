@@ -106,6 +106,7 @@ nitpick_ignore = [
     ("py:class", "numpy.array"),
     ("py:class", "ase.gui.gui.GUI"),
     ("py:class", "ase.gui.images.Images"),
+    ("py:class", "ase.atoms.Atoms"),
     ("py:class", "ipywidgets.GridspecLayout"),
     ("py:class", "pythreejs.Renderer"),
     ("py:class", "tkinter.Canvas"),
