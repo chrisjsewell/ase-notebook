@@ -68,7 +68,7 @@ more-itertools==7.2.0     # via pytest, zipp
 nbconvert==5.6.1          # via ipypublish, notebook
 nbformat==4.4.0           # via ipypublish, ipywidgets, jupytext, nbconvert, notebook
 nodeenv==1.3.3            # via pre-commit
-notebook==6.0.2           # via widgetsnbextension
+notebook==6.1.5           # via widgetsnbextension
 numpy==1.16.5
 ordered-set==3.1.1        # via ipypublish
 packaging==19.2           # via sphinx
