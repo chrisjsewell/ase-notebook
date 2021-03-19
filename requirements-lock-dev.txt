@@ -79,7 +79,7 @@ pathlib2==2.3.5           # via jsonextended
 pbr==5.4.3                # via stevedore
 pexpect==4.7.0            # via ipython
 pickleshare==0.7.5        # via ipython
-pillow==6.2.1             # via reportlab
+pillow==8.1.1             # via reportlab
 pluggy==0.13.0            # via pytest
 pre-commit==1.17.0
 prometheus-client==0.7.1  # via notebook
