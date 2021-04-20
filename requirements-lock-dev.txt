@@ -85,7 +85,7 @@ pre-commit==1.17.0
 prometheus-client==0.7.1  # via notebook
 prompt-toolkit==2.0.10    # via ipython
 ptyprocess==0.6.0         # via pexpect, terminado
-py==1.8.0                 # via pytest
+py==1.10.0                 # via pytest
 pycodestyle==2.5.0        # via flake8
 pydocstyle==4.0.1         # via flake8-docstrings
 pyflakes==2.1.1           # via flake8
