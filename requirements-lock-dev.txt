@@ -128,7 +128,7 @@ toml==0.10.0              # via black, pre-commit
 tornado==6.0.3            # via ipykernel, ipypublish, jupyter-client, notebook, terminado
 traitlets==4.3.3          # via ipykernel, ipypublish, ipython, ipywidgets, jupyter-client, jupyter-core, nbconvert, nbformat, notebook, traittypes
 traittypes==0.2.1         # via ipydatawidgets
-urllib3==1.25.6           # via requests
+urllib3==1.26.5           # via requests
 virtualenv==16.7.7        # via pre-commit
 wcwidth==0.1.7            # via prompt-toolkit
 webencodings==0.5.1       # via bleach, tinycss2
