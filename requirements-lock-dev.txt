@@ -63,7 +63,7 @@ lxml==4.4.1               # via svglib, svgutils
 markupsafe==1.1.1         # via jinja2
 matplotlib==3.1.1
 mccabe==0.6.1             # via flake8
-mistune==0.8.4            # via nbconvert
+mistune==2.0.3            # via nbconvert
 more-itertools==7.2.0     # via pytest, zipp
 nbconvert==5.6.1          # via ipypublish, notebook
 nbformat==4.4.0           # via ipypublish, ipywidgets, jupytext, nbconvert, notebook
